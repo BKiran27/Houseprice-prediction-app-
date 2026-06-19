@@ -22,8 +22,8 @@ env/
 # Model files (large binaries — regenerate with train.py)
 models/model.pkl
 
-# Data (regenerate with generate_data.py)
-# Uncomment below if you don't want to commit the dataset:
+# Data is committed so users can run the app immediately
+# To exclude it, uncomment the line below:
 # data/house_data.csv
 
 # IDE
