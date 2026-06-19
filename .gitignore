@@ -10,14 +10,19 @@ dist/
 build/
 .eggs/
 
+# Planning / scratch files
+implementation_plan.md
+*.scratch.*
+
+
 # Virtual environments
 venv/
 env/
 .env
 .venv/
 
-# Streamlit
-.streamlit/
+# Streamlit cache only — keep config.toml
+.streamlit/secrets.toml
 
 # Model files (large binaries — regenerate with train.py)
 models/model.pkl

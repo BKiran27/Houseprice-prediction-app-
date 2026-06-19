@@ -1,7 +1,7 @@
 """
-app.py  —  Indian House Price Prediction App (Streamlit)
+app.py  —  Ghar Bazaar: Indian House Price Prediction App
 Tabs: Predict | Data Explorer | Model Performance | Compare Properties
-All bugs fixed: margin conflict, rgba string, use_container_width, key names.
+Compatible with Streamlit 1.58+ | Auto-bootstraps model on first run
 """
 
 import os
@@ -421,7 +421,7 @@ with tab1:
         )
         st.markdown("</div>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
-        predict_btn = st.button("Predict House Price", use_container_width=True)
+        predict_btn = st.button("Predict House Price", use_container_width=True)  # button OK
 
     with col_right:
         # Property summary tags
@@ -511,7 +511,7 @@ with tab1:
                 showlegend=False,
                 height=280,
             )
-            st.plotly_chart(fig_radar, use_container_width=True)
+            st.plotly_chart(fig_radar, width="stretch")
 
         else:
             st.markdown("""
@@ -565,7 +565,7 @@ with tab2:
                             color_discrete_sequence=["#ff9900"])
         fig1.update_traces(opacity=0.85)
         apply_layout(fig1)
-        st.plotly_chart(fig1, use_container_width=True)
+        st.plotly_chart(fig1, width="stretch")
 
     with r1b:
         # Extract metro from city name for cleaner axis
@@ -577,7 +577,7 @@ with tab2:
                       color="Price",
                       color_continuous_scale=["#138808", "#ff9900", "#e94560"])
         apply_layout(fig2, coloraxis_showscale=False)
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, width="stretch")
 
     # Row 2: Area vs Price + BHK box
     r2a, r2b = st.columns(2, gap="medium")
@@ -589,7 +589,7 @@ with tab2:
                           opacity=0.6,
                           color_discrete_sequence=px.colors.qualitative.Vivid)
         apply_layout(fig3)
-        st.plotly_chart(fig3, use_container_width=True)
+        st.plotly_chart(fig3, width="stretch")
 
     with r2b:
         fig4 = px.box(df, x="Bedrooms", y="Price",
@@ -598,7 +598,7 @@ with tab2:
                       color="Bedrooms",
                       color_discrete_sequence=["#ff9900","#138808","#0606b4","#e94560","#9b5de5"])
         apply_layout(fig4, showlegend=False)
-        st.plotly_chart(fig4, use_container_width=True)
+        st.plotly_chart(fig4, width="stretch")
 
     # Row 3: Furnishing + floor analysis
     r3a, r3b = st.columns(2, gap="medium")
@@ -611,7 +611,7 @@ with tab2:
                       color="Furnishing",
                       color_discrete_sequence=["#64748b","#ff9900","#138808"])
         apply_layout(fig5, showlegend=False)
-        st.plotly_chart(fig5, use_container_width=True)
+        st.plotly_chart(fig5, width="stretch")
 
     with r3b:
         floor_med = df.groupby("Floor")["Price"].median().reset_index()
@@ -621,7 +621,7 @@ with tab2:
                       color="Price",
                       color_continuous_scale=["#138808","#ff9900","#e94560"])
         apply_layout(fig6, coloraxis_showscale=False)
-        st.plotly_chart(fig6, use_container_width=True)
+        st.plotly_chart(fig6, width="stretch")
 
     # Row 4: Correlation + Age vs Price
     r4a, r4b = st.columns(2, gap="medium")
@@ -633,7 +633,7 @@ with tab2:
                          color_continuous_scale="RdBu_r",
                          zmin=-1, zmax=1, text_auto=".2f")
         apply_layout(fig7)
-        st.plotly_chart(fig7, use_container_width=True)
+        st.plotly_chart(fig7, width="stretch")
 
     with r4b:
         z = np.polyfit(df["Age"], df["Price"], 1)
@@ -648,7 +648,7 @@ with tab2:
                                   line=dict(color="#ff9900", width=2.5, dash="dash"),
                                   name="Trend"))
         apply_layout(fig8)
-        st.plotly_chart(fig8, use_container_width=True)
+        st.plotly_chart(fig8, width="stretch")
 
     # Top 10 expensive localities
     st.markdown('<div class="section-header">Most Expensive Localities</div>', unsafe_allow_html=True)
@@ -659,10 +659,10 @@ with tab2:
                   color_continuous_scale=["#138808","#ff9900","#e94560"],
                   labels={"Price": "Median Price (Lakh)", "City": ""})
     apply_layout(fig9, height=350, coloraxis_showscale=False)
-    st.plotly_chart(fig9, use_container_width=True)
+    st.plotly_chart(fig9, width="stretch")
 
     with st.expander("Raw Dataset (first 100 rows)"):
-        st.dataframe(df.head(100), use_container_width=True)
+        st.dataframe(df.head(100), width="stretch")
 
 
 # ╔══════════════════════════════════════════════════════════════════╗
@@ -725,7 +725,7 @@ with tab3:
             textposition="outside", textfont=dict(color="#f1f5f9"),
         ))
         apply_layout(fig_r2, title="R2 Score Comparison", yaxis=dict(range=[0, 1.05]))
-        st.plotly_chart(fig_r2, use_container_width=True)
+        st.plotly_chart(fig_r2, width="stretch")
 
     with bc2:
         mae_vals = {k: v["MAE"] for k, v in results.items()}
@@ -736,7 +736,7 @@ with tab3:
             textposition="outside", textfont=dict(color="#f1f5f9"),
         ))
         apply_layout(fig_mae, title="MAE — lower is better")
-        st.plotly_chart(fig_mae, use_container_width=True)
+        st.plotly_chart(fig_mae, width="stretch")
 
     # Actual vs Predicted
     if data_ready:
@@ -759,7 +759,7 @@ with tab3:
                 line=dict(color="#138808", dash="dash", width=2), name="Perfect Fit"))
             apply_layout(fig_avp, title="Actual vs Predicted Prices",
                          xaxis_title="Actual (Lakh)", yaxis_title="Predicted (Lakh)")
-            st.plotly_chart(fig_avp, use_container_width=True)
+            st.plotly_chart(fig_avp, width="stretch")
 
         with av2:
             fig_res = px.histogram(x=residuals, nbins=50,
@@ -768,7 +768,7 @@ with tab3:
                                    color_discrete_sequence=["#138808"])
             fig_res.add_vline(x=0, line_dash="dash", line_color="#ff9900", line_width=2)
             apply_layout(fig_res)
-            st.plotly_chart(fig_res, use_container_width=True)
+            st.plotly_chart(fig_res, width="stretch")
 
     # Feature importances
     try:
@@ -790,7 +790,7 @@ with tab3:
                         color_continuous_scale=["#138808", "#ff9900", "#e94560"],
                         title=f"Feature Importances — {best}")
         apply_layout(fig_fi, coloraxis_showscale=False, height=450)
-        st.plotly_chart(fig_fi, use_container_width=True)
+        st.plotly_chart(fig_fi, width="stretch")
     except AttributeError:
         pass
 
@@ -902,7 +902,7 @@ with tab4:
             ),
             height=380,
         )
-        st.plotly_chart(fig_comp, use_container_width=True)
+        st.plotly_chart(fig_comp, width="stretch")
 
         # Side-by-side bar
         feat_labels = ["Area (sqft/100)","Bedrooms","Bathrooms","Parking","Price (Lakh)"]
@@ -913,4 +913,4 @@ with tab4:
         fig_bar.add_trace(go.Bar(name="Property A", x=feat_labels, y=a_vals, marker_color="#ff9900"))
         fig_bar.add_trace(go.Bar(name="Property B", x=feat_labels, y=b_vals, marker_color="#138808"))
         apply_layout(fig_bar, title="Side-by-Side Feature Comparison", barmode="group")
-        st.plotly_chart(fig_bar, use_container_width=True)
+        st.plotly_chart(fig_bar, width="stretch")
