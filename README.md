@@ -6,6 +6,9 @@
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.35+-red?logo=streamlit)
 ![Scikit-learn](https://img.shields.io/badge/Scikit--learn-1.5+-orange?logo=scikit-learn)
 ![License](https://img.shields.io/badge/License-MIT-green)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://houseprice-prediction-app-bkiran27.streamlit.app)
+
+### 🔗 [Live Demo → https://houseprice-prediction-app-bkiran27.streamlit.app](https://houseprice-prediction-app-bkiran27.streamlit.app)
 
 ---
 

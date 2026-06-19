@@ -169,6 +169,117 @@ def apply_layout(fig, **extra):
 # ═══════════════════════════════════════════════════════════════════════════════
 # Load model & data
 # ═══════════════════════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Auto-Bootstrap: generate data + train model if not present (Streamlit Cloud)
+# ═══════════════════════════════════════════════════════════════════════════════
+def auto_bootstrap():
+    """Run data generation + training inline if artifacts are missing."""
+    import numpy as np
+    import pandas as pd
+    from sklearn.compose import ColumnTransformer
+    from sklearn.preprocessing import OneHotEncoder, StandardScaler
+    from sklearn.pipeline import Pipeline
+    from sklearn.linear_model import LinearRegression
+    from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+    from sklearn.model_selection import train_test_split, cross_val_score
+    from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+    # ── Generate data ──────────────────────────────────────────────────────────
+    if not os.path.exists("data/house_data.csv"):
+        np.random.seed(42)
+        N = 1500
+        CITY_DATA = {
+            "Mumbai - Bandra":2.80,"Mumbai - Andheri":2.20,"Mumbai - Thane":1.60,
+            "Delhi - South Delhi":2.50,"Delhi - Dwarka":1.80,
+            "Noida - Sector 62":1.40,"Gurgaon - DLF Phase":2.00,
+            "Bengaluru - Koramangala":2.10,"Bengaluru - Whitefield":1.75,"Bengaluru - Sarjapur":1.55,
+            "Hyderabad - Gachibowli":1.65,"Hyderabad - Banjara Hills":1.90,
+            "Pune - Koregaon Park":1.70,"Pune - Hinjewadi":1.35,"Pune - Viman Nagar":1.50,
+            "Chennai - Adyar":1.80,"Chennai - OMR":1.40,
+            "Kolkata - Salt Lake":1.45,"Kolkata - New Town":1.30,
+            "Ahmedabad - SG Highway":1.25,"Jaipur - Malviya Nagar":1.20,"Kochi - Marine Drive":1.55,
+        }
+        city_names = list(CITY_DATA.keys())
+        city_probs = [0.07,0.06,0.05,0.06,0.05,0.05,0.05,0.07,0.06,0.05,
+                      0.05,0.04,0.05,0.04,0.04,0.04,0.04,0.04,0.03,0.04,0.04,0.03]
+        city_probs = [p/sum(city_probs) for p in city_probs]
+        locations  = np.random.choice(city_names, size=N, p=city_probs)
+        bedrooms   = np.random.choice([1,2,3,4,5], size=N, p=[0.10,0.25,0.38,0.20,0.07])
+        bathrooms  = np.clip(bedrooms - np.random.choice([0,1], size=N, p=[0.65,0.35]),1,5)
+        parking    = np.random.choice([0,1,2,3], size=N, p=[0.12,0.48,0.30,0.10])
+        age        = np.random.randint(0, 35, size=N)
+        furnishing = np.random.choice(["Unfurnished","Semi-Furnished","Fully Furnished"],
+                                      size=N, p=[0.30,0.45,0.25])
+        floor_type = np.random.choice(["Ground","Low (1-4)","Mid (5-10)","High (11+)"],
+                                      size=N, p=[0.15,0.35,0.30,0.20])
+        base_area  = bedrooms * 400
+        area       = (base_area + np.random.normal(0,180,size=N)).clip(350,5500).astype(int)
+        furn_mult  = {"Unfurnished":0.90,"Semi-Furnished":1.00,"Fully Furnished":1.12}
+        flr_mult   = {"Ground":0.95,"Low (1-4)":1.00,"Mid (5-10)":1.04,"High (11+)":1.08}
+        price = (
+            20.0 + area*0.030 + bedrooms*4.0 + bathrooms*3.0 + parking*2.5
+            - age*0.40 + np.random.normal(0,5,size=N)
+        ) * np.array([CITY_DATA[l] for l in locations]) \
+          * np.array([furn_mult[f] for f in furnishing]) \
+          * np.array([flr_mult[f]  for f in floor_type])
+        price = price.clip(10, 800).round(2)
+        df_gen = pd.DataFrame({
+            "Area":area,"Bedrooms":bedrooms,"Bathrooms":bathrooms.astype(int),
+            "Parking":parking,"Age":age,"Furnishing":furnishing,
+            "Floor":floor_type,"City":locations,"Price":price,
+        })
+        os.makedirs("data", exist_ok=True)
+        df_gen.to_csv("data/house_data.csv", index=False)
+
+    # ── Train models ───────────────────────────────────────────────────────────
+    df_t = pd.read_csv("data/house_data.csv")
+    FEATURES = ["Area","Bedrooms","Bathrooms","Parking","Age","Furnishing","Floor","City"]
+    X = df_t[FEATURES];  y = df_t["Price"]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    num_f = ["Area","Bedrooms","Bathrooms","Parking","Age"]
+    cat_f = ["Furnishing","Floor","City"]
+    pre   = ColumnTransformer([
+        ("num", StandardScaler(),                       num_f),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_f),
+    ])
+    models = {
+        "Linear Regression": LinearRegression(),
+        "Random Forest":     RandomForestRegressor(n_estimators=150, random_state=42, n_jobs=-1),
+        "Gradient Boosting": GradientBoostingRegressor(n_estimators=150, random_state=42),
+    }
+    results, pipelines = {}, {}
+    for name, reg in models.items():
+        pipe = Pipeline([("preprocessor", pre), ("regressor", reg)])
+        pipe.fit(X_train, y_train)
+        preds = pipe.predict(X_test)
+        cv    = cross_val_score(pipe, X, y, cv=5, scoring="r2").mean()
+        results[name] = {
+            "MAE":  mean_absolute_error(y_test, preds),
+            "RMSE": float(np.sqrt(mean_squared_error(y_test, preds))),
+            "R2":   r2_score(y_test, preds),
+            "CV_R2": cv,
+        }
+        pipelines[name] = pipe
+
+    best = max(results, key=lambda k: results[k]["CV_R2"])
+    os.makedirs("models", exist_ok=True)
+    joblib.dump({
+        "model": pipelines[best], "model_name": best,
+        "all_results": results, "features": FEATURES,
+        "all_pipelines": pipelines,
+    }, "models/model.pkl")
+
+
+# ── Run bootstrap silently if model missing ────────────────────────────────────
+if not os.path.exists("models/model.pkl"):
+    with st.spinner("Setting up AI model for first time... Please wait ~30 seconds"):
+        auto_bootstrap()
+    st.cache_resource.clear()
+    st.cache_data.clear()
+
+
 @st.cache_resource(show_spinner="Loading AI model ...")
 def load_model():
     path = "models/model.pkl"
@@ -181,10 +292,11 @@ def load_data():
     return pd.read_csv(path) if os.path.exists(path) else None
 
 
-payload    = load_model()
-df         = load_data()
+payload     = load_model()
+df          = load_data()
 model_ready = payload is not None
 data_ready  = df is not None
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sidebar
