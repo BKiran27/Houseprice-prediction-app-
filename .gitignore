@@ -14,22 +14,14 @@ build/
 implementation_plan.md
 *.scratch.*
 
-
 # Virtual environments
 venv/
 env/
 .env
 .venv/
 
-# Streamlit cache only — keep config.toml
+# Streamlit secrets
 .streamlit/secrets.toml
-
-# Model files (large binaries — regenerate with train.py)
-models/model.pkl
-
-# Data is committed so users can run the app immediately
-# To exclude it, uncomment the line below:
-# data/house_data.csv
 
 # IDE
 .vscode/

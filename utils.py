@@ -1,142 +1,194 @@
 """
-utils.py  —  Shared helpers for Indian House Price Prediction App
+utils.py  —  California House Price Prediction Helpers & Presets
+Matches the End-to-End ML Pipeline from Project 15.4 (California Housing Dataset)
 """
 
-import numpy as np
 import pandas as pd
+import numpy as np
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
-# ── Indian city localities ────────────────────────────────────────────────────
-CITIES = [
-    "Mumbai - Bandra",
-    "Mumbai - Andheri",
-    "Mumbai - Thane",
-    "Delhi - South Delhi",
-    "Delhi - Dwarka",
-    "Noida - Sector 62",
-    "Gurgaon - DLF Phase",
-    "Bengaluru - Koramangala",
-    "Bengaluru - Whitefield",
-    "Bengaluru - Sarjapur",
-    "Hyderabad - Gachibowli",
-    "Hyderabad - Banjara Hills",
-    "Pune - Koregaon Park",
-    "Pune - Hinjewadi",
-    "Pune - Viman Nagar",
-    "Chennai - Adyar",
-    "Chennai - OMR",
-    "Kolkata - Salt Lake",
-    "Kolkata - New Town",
-    "Ahmedabad - SG Highway",
-    "Jaipur - Malviya Nagar",
-    "Kochi - Marine Drive",
+TARGET_COL = "median_house_value"
+
+NUMERICAL_FEATURES = [
+    "longitude",
+    "latitude",
+    "housing_median_age",
+    "total_rooms",
+    "total_bedrooms",
+    "population",
+    "households",
+    "median_income"
 ]
 
-CITY_EMOJIS = {
-    "Mumbai - Bandra":            "🌊",
-    "Mumbai - Andheri":           "🏙️",
-    "Mumbai - Thane":             "🏘️",
-    "Delhi - South Delhi":        "🏛️",
-    "Delhi - Dwarka":             "🏗️",
-    "Noida - Sector 62":          "💻",
-    "Gurgaon - DLF Phase":        "🏢",
-    "Bengaluru - Koramangala":    "☕",
-    "Bengaluru - Whitefield":     "🖥️",
-    "Bengaluru - Sarjapur":       "🌿",
-    "Hyderabad - Gachibowli":     "💡",
-    "Hyderabad - Banjara Hills":  "👑",
-    "Pune - Koregaon Park":       "🌳",
-    "Pune - Hinjewadi":           "⚙️",
-    "Pune - Viman Nagar":         "✈️",
-    "Chennai - Adyar":            "🌴",
-    "Chennai - OMR":              "🔬",
-    "Kolkata - Salt Lake":        "🏫",
-    "Kolkata - New Town":         "🆕",
-    "Ahmedabad - SG Highway":     "🛣️",
-    "Jaipur - Malviya Nagar":     "🏰",
-    "Kochi - Marine Drive":       "⛵",
+CATEGORICAL_FEATURES = ["ocean_proximity"]
+
+ALL_FEATURES = NUMERICAL_FEATURES + CATEGORICAL_FEATURES
+
+OCEAN_PROXIMITY_OPTIONS = [
+    "<1H OCEAN",
+    "INLAND",
+    "NEAR OCEAN",
+    "NEAR BAY",
+    "ISLAND"
+]
+
+OCEAN_PROXIMITY_EMOJIS = {
+    "<1H OCEAN": "🚗 <1H Ocean",
+    "INLAND": "🏞️ Inland",
+    "NEAR OCEAN": "🌊 Near Ocean",
+    "NEAR BAY": "🌉 Near Bay",
+    "ISLAND": "🏝️ Island"
 }
 
-CITY_INFO = {
-    "Mumbai - Bandra":            "Premium sea-facing locality; Bollywood hub.",
-    "Mumbai - Andheri":           "Well-connected suburb; commercial & residential mix.",
-    "Mumbai - Thane":             "Affordable Mumbai alternative; rapid development.",
-    "Delhi - South Delhi":        "Most premium Delhi locality; diplomatic enclave zone.",
-    "Delhi - Dwarka":             "Planned sub-city; great metro connectivity.",
-    "Noida - Sector 62":          "IT & corporate park zone; modern infrastructure.",
-    "Gurgaon - DLF Phase":        "Millennium City; MNC offices & luxury apartments.",
-    "Bengaluru - Koramangala":    "Startup capital's hotspot; vibrant cafe culture.",
-    "Bengaluru - Whitefield":     "Major IT corridor; expat-friendly locality.",
-    "Bengaluru - Sarjapur":       "Emerging tech suburb; good appreciation potential.",
-    "Hyderabad - Gachibowli":     "HITEC City neighbor; top IT companies.",
-    "Hyderabad - Banjara Hills":  "Upscale Hyderabad; luxury residences.",
-    "Pune - Koregaon Park":       "Upmarket Pune; expat & business community.",
-    "Pune - Hinjewadi":           "IT park hub; Infosys, Wipro offices nearby.",
-    "Pune - Viman Nagar":         "Near airport; cosmopolitan neighborhood.",
-    "Chennai - Adyar":            "Old-money neighborhood; calm & green.",
-    "Chennai - OMR":              "Old Mahabalipuram Road; Chennai's IT spine.",
-    "Kolkata - Salt Lake":        "Planned township; IT sector & government offices.",
-    "Kolkata - New Town":         "Smartcity project; modern infrastructure.",
-    "Ahmedabad - SG Highway":     "Sarkhej-Gandhinagar corridor; rapid growth.",
-    "Jaipur - Malviya Nagar":     "Pink City's upscale zone; wide roads.",
-    "Kochi - Marine Drive":       "Kerala's waterfront gem; premium pricing.",
+# California Region Presets for 1-click exploration in the UI
+CALIFORNIA_PRESETS = {
+    "Custom Location (Manual Input)": None,
+    "San Francisco - Bay Area (Near Bay)": {
+        "longitude": -122.25,
+        "latitude": 37.85,
+        "housing_median_age": 42.0,
+        "total_rooms": 2500,
+        "total_bedrooms": 450,
+        "population": 1100,
+        "households": 420,
+        "median_income": 8.35, # ~$83,500
+        "ocean_proximity": "NEAR BAY"
+    },
+    "Silicon Valley - Palo Alto (<1H Ocean)": {
+        "longitude": -122.14,
+        "latitude": 37.44,
+        "housing_median_age": 35.0,
+        "total_rooms": 3800,
+        "total_bedrooms": 600,
+        "population": 1400,
+        "households": 550,
+        "median_income": 9.50, # ~$95,000
+        "ocean_proximity": "<1H OCEAN"
+    },
+    "West Los Angeles - Santa Monica (Near Ocean)": {
+        "longitude": -118.49,
+        "latitude": 34.02,
+        "housing_median_age": 38.0,
+        "total_rooms": 3100,
+        "total_bedrooms": 520,
+        "population": 1250,
+        "households": 490,
+        "median_income": 7.80, # ~$78,000
+        "ocean_proximity": "NEAR OCEAN"
+    },
+    "San Diego - Coastal (<1H Ocean)": {
+        "longitude": -117.23,
+        "latitude": 32.84,
+        "housing_median_age": 28.0,
+        "total_rooms": 2900,
+        "total_bedrooms": 480,
+        "population": 1300,
+        "households": 460,
+        "median_income": 6.20, # ~$62,000
+        "ocean_proximity": "<1H OCEAN"
+    },
+    "Sacramento Suburbs (Inland)": {
+        "longitude": -121.49,
+        "latitude": 38.58,
+        "housing_median_age": 22.0,
+        "total_rooms": 2800,
+        "total_bedrooms": 510,
+        "population": 1450,
+        "households": 500,
+        "median_income": 3.85, # ~$38,500
+        "ocean_proximity": "INLAND"
+    },
+    "Central Valley - Fresno (Inland)": {
+        "longitude": -119.77,
+        "latitude": 36.75,
+        "housing_median_age": 20.0,
+        "total_rooms": 2200,
+        "total_bedrooms": 430,
+        "population": 1500,
+        "households": 440,
+        "median_income": 2.50, # ~$25,000
+        "ocean_proximity": "INLAND"
+    },
+    "Catalina Island (Island)": {
+        "longitude": -118.33,
+        "latitude": 33.34,
+        "housing_median_age": 50.0,
+        "total_rooms": 2100,
+        "total_bedrooms": 410,
+        "population": 750,
+        "households": 320,
+        "median_income": 4.10, # ~$41,000
+        "ocean_proximity": "ISLAND"
+    }
 }
 
-CITY_PRICE_MULT = {
-    "Mumbai - Bandra":            2.80,
-    "Mumbai - Andheri":           2.20,
-    "Mumbai - Thane":             1.60,
-    "Delhi - South Delhi":        2.50,
-    "Delhi - Dwarka":             1.80,
-    "Noida - Sector 62":          1.40,
-    "Gurgaon - DLF Phase":        2.00,
-    "Bengaluru - Koramangala":    2.10,
-    "Bengaluru - Whitefield":     1.75,
-    "Bengaluru - Sarjapur":       1.55,
-    "Hyderabad - Gachibowli":     1.65,
-    "Hyderabad - Banjara Hills":  1.90,
-    "Pune - Koregaon Park":       1.70,
-    "Pune - Hinjewadi":           1.35,
-    "Pune - Viman Nagar":         1.50,
-    "Chennai - Adyar":            1.80,
-    "Chennai - OMR":              1.40,
-    "Kolkata - Salt Lake":        1.45,
-    "Kolkata - New Town":         1.30,
-    "Ahmedabad - SG Highway":     1.25,
-    "Jaipur - Malviya Nagar":     1.20,
-    "Kochi - Marine Drive":       1.55,
-}
 
-FURNISHING_OPTIONS = ["Unfurnished", "Semi-Furnished", "Fully Furnished"]
-FLOOR_OPTIONS      = ["Ground", "Low (1-4)", "Mid (5-10)", "High (11+)"]
-
-
-def format_price(price_lakh: float) -> str:
-    """Format price in Indian currency notation."""
-    if price_lakh >= 100:
-        cr = price_lakh / 100
-        return f"Rs. {cr:.2f} Cr"
-    return f"Rs. {price_lakh:.2f} L"
-
-
-def price_range(price_lakh: float, pct: float = 0.08):
-    lo = price_lakh * (1 - pct)
-    hi = price_lakh * (1 + pct)
-    return format_price(lo), format_price(hi)
-
-
-def age_label(age: int) -> str:
-    if age == 0:   return "Brand New / Under Construction"
-    if age <= 3:   return "Nearly New (< 3 yrs)"
-    if age <= 8:   return "Modern (< 8 yrs)"
-    if age <= 15:  return "Established (< 15 yrs)"
-    return "Old Property (15+ yrs)"
-
-
-def build_input_df(area, bedrooms, bathrooms, parking, age,
-                   furnishing, floor, city) -> "pd.DataFrame":
-    import pandas as pd
-    return pd.DataFrame(
-        [[area, bedrooms, bathrooms, parking, age, furnishing, floor, city]],
-        columns=["Area", "Bedrooms", "Bathrooms", "Parking", "Age",
-                 "Furnishing", "Floor", "City"],
+def create_preprocessor():
+    """
+    Creates the exact ColumnTransformer preprocessing pipeline specified in the tutorial:
+    - Numerical: Median SimpleImputer + StandardScaler
+    - Categorical: Most Frequent SimpleImputer + OneHotEncoder(handle_unknown='ignore')
+    """
+    numerical_transformer = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler())
+        ]
     )
+
+    categorical_transformer = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("onehot", OneHotEncoder(handle_unknown="ignore"))
+        ]
+    )
+
+    preprocess = ColumnTransformer(
+        transformers=[
+            ("num", numerical_transformer, NUMERICAL_FEATURES),
+            ("cat", categorical_transformer, CATEGORICAL_FEATURES)
+        ]
+    )
+    return preprocess
+
+
+def build_input_df(
+    longitude: float,
+    latitude: float,
+    housing_median_age: float,
+    total_rooms: float,
+    total_bedrooms: float,
+    population: float,
+    households: float,
+    median_income: float,
+    ocean_proximity: str
+) -> pd.DataFrame:
+    """Creates a single-row DataFrame formatted for the model pipeline."""
+    return pd.DataFrame([{
+        "longitude": longitude,
+        "latitude": latitude,
+        "housing_median_age": housing_median_age,
+        "total_rooms": total_rooms,
+        "total_bedrooms": total_bedrooms,
+        "population": population,
+        "households": households,
+        "median_income": median_income,
+        "ocean_proximity": ocean_proximity
+    }])
+
+
+def format_usd(val: float) -> str:
+    """Format price in standard US Dollar currency string."""
+    if val >= 1_000_000:
+        return f"${val / 1_000_000:.2f}M"
+    return f"${val:,.0f}"
+
+
+def calculate_price_range(predicted_price: float, rmse: float = 46000.0):
+    """Calculates approximate 68% prediction interval using model RMSE."""
+    lower = max(10000.0, predicted_price - rmse)
+    upper = predicted_price + rmse
+    return format_usd(lower), format_usd(upper)

@@ -1,7 +1,11 @@
 """
-train.py  —  Indian House Price Prediction: Model Training
-Trains Linear Regression, Random Forest, Gradient Boosting.
-Saves best model + all pipelines to models/model.pkl
+train.py  —  Model Training Pipeline for California House Price Prediction
+Implements the workflow from Project 15.4:
+- Preprocessing with ColumnTransformer (Imputation + Scaling + OneHot)
+- 5-Fold Cross Validation benchmark across 5 regression models
+- Tuned HistGradientBoostingRegressor (best model)
+- Evaluation on Test Set (RMSE, MAE, R2)
+- Serializes trained pipeline and benchmark results to models/model.pkl
 """
 
 import os
@@ -9,99 +13,150 @@ import sys
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.model_selection import train_test_split, KFold, cross_validate
 from sklearn.pipeline import Pipeline
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.linear_model import LinearRegression, Ridge, Lasso
+from sklearn.ensemble import RandomForestRegressor, HistGradientBoostingRegressor
+from sklearn.metrics import root_mean_squared_error, mean_absolute_error, r2_score
 
-# ── 1. Load data ───────────────────────────────────────────────────────────────
-DATA_PATH = "data/house_data.csv"
-if not os.path.exists(DATA_PATH):
-    print("[ERROR] data/house_data.csv not found. Run generate_data.py first!")
-    sys.exit(1)
+from utils import create_preprocessor, ALL_FEATURES, TARGET_COL
 
-df = pd.read_csv(DATA_PATH)
-print(f"[INFO] Loaded dataset: {df.shape[0]} rows x {df.shape[1]} cols")
+RANDOM_STATE = 42
+DATA_PATH = os.path.join("data", "housing.csv")
+MODEL_DIR = "models"
+MODEL_PATH = os.path.join(MODEL_DIR, "model.pkl")
 
-FEATURES = ["Area", "Bedrooms", "Bathrooms", "Parking", "Age",
-            "Furnishing", "Floor", "City"]
-TARGET   = "Price"
 
-X = df[FEATURES]
-y = df[TARGET]
+def train_and_evaluate():
+    print("[INFO] Starting California House Price Prediction Pipeline...")
 
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
-)
+    if not os.path.exists(DATA_PATH):
+        print(f"[ERROR] {DATA_PATH} not found. Please ensure housing.csv is placed in data/")
+        sys.exit(1)
 
-# ── 2. Preprocessing ───────────────────────────────────────────────────────────
-numeric_features      = ["Area", "Bedrooms", "Bathrooms", "Parking", "Age"]
-categorical_features  = ["Furnishing", "Floor", "City"]
+    df = pd.read_csv(DATA_PATH)
+    print(f"[INFO] Loaded dataset: {df.shape[0]} rows x {df.shape[1]} columns")
 
-preprocessor = ColumnTransformer([
-    ("num", StandardScaler(),                       numeric_features),
-    ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_features),
-])
+    X = df.drop(columns=[TARGET_COL])
+    y = df[TARGET_COL]
 
-# ── 3. Models ──────────────────────────────────────────────────────────────────
-models = {
-    "Linear Regression": LinearRegression(),
-    "Random Forest":     RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1),
-    "Gradient Boosting": GradientBoostingRegressor(n_estimators=200, random_state=42),
-}
+    # Train / Test split (80/20)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=RANDOM_STATE
+    )
+    print(f"[INFO] Train split: {X_train.shape[0]} samples | Test split: {X_test.shape[0]} samples")
 
-results, trained_pipelines = {}, {}
+    preprocessor = create_preprocessor()
 
-print("\n[INFO] Training & Evaluating Models ...\n" + "-" * 60)
-for name, regressor in models.items():
-    pipe = Pipeline([("preprocessor", preprocessor), ("regressor", regressor)])
-    pipe.fit(X_train, y_train)
-    preds = pipe.predict(X_test)
+    # Models benchmark dictionary
+    models = {
+        "Linear Regression": LinearRegression(),
+        "Ridge": Ridge(random_state=RANDOM_STATE),
+        "Lasso": Lasso(random_state=RANDOM_STATE, max_iter=10000),
+        "Random Forest": RandomForestRegressor(n_estimators=100, random_state=RANDOM_STATE, n_jobs=-1),
+        "HistGradientBoosting": HistGradientBoostingRegressor(random_state=RANDOM_STATE)
+    }
 
-    mae  = mean_absolute_error(y_test, preds)
-    rmse = np.sqrt(mean_squared_error(y_test, preds))
-    r2   = r2_score(y_test, preds)
-    cv   = cross_val_score(pipe, X, y, cv=5, scoring="r2").mean()
+    cv = KFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
+    scoring = {
+        "rmse": "neg_root_mean_squared_error",
+        "mae": "neg_mean_absolute_error",
+        "r2": "r2"
+    }
 
-    results[name] = {"MAE": mae, "RMSE": rmse, "R2": r2, "CV_R2": cv}
-    trained_pipelines[name] = pipe
+    cv_results = {}
+    test_results = {}
+    trained_pipelines = {}
 
-    print(f"  {name}")
-    print(f"    MAE   = Rs. {mae:.2f} Lakh")
-    print(f"    RMSE  = Rs. {rmse:.2f} Lakh")
-    print(f"    R2    = {r2:.4f}")
-    print(f"    CV R2 = {cv:.4f}")
-    print()
+    print("\n" + "=" * 65)
+    print(" 5-FOLD CROSS VALIDATION & TEST EVALUATION")
+    print("=" * 65)
 
-# ── 4. Best model ──────────────────────────────────────────────────────────────
-best_name = max(results, key=lambda k: results[k]["CV_R2"])
-best_pipe = trained_pipelines[best_name]
-print(f"[BEST] {best_name}  (CV R2 = {results[best_name]['CV_R2']:.4f})")
+    for name, model in models.items():
+        pipe = Pipeline([
+            ("preprocess", preprocessor),
+            ("model", model)
+        ])
 
-# ── 5. Feature importances ─────────────────────────────────────────────────────
-try:
-    fi  = best_pipe.named_steps["regressor"].feature_importances_
-    enc = best_pipe.named_steps["preprocessor"].named_transformers_["cat"]
-    enc_names = enc.get_feature_names_out(categorical_features)
-    feat_names = numeric_features + list(enc_names)
-    fi_df = (pd.DataFrame({"Feature": feat_names, "Importance": fi})
-               .sort_values("Importance", ascending=False))
-    print("\n[INFO] Top 12 Feature Importances:")
-    print(fi_df.head(12).to_string(index=False))
-except AttributeError:
-    pass
+        # 5-fold cross validation on training data
+        scores = cross_validate(pipe, X_train, y_train, cv=cv, scoring=scoring, n_jobs=-1)
+        cv_rmse = -float(scores["test_rmse"].mean())
+        cv_mae = -float(scores["test_mae"].mean())
+        cv_r2 = float(scores["test_r2"].mean())
 
-# ── 6. Save ────────────────────────────────────────────────────────────────────
-os.makedirs("models", exist_ok=True)
-payload = {
-    "model":          best_pipe,
-    "model_name":     best_name,
-    "all_results":    results,
-    "features":       FEATURES,
-    "all_pipelines":  trained_pipelines,
-}
-joblib.dump(payload, "models/model.pkl")
-print("\n[OK] Saved -> models/model.pkl")
+        # Fit on full training set and evaluate on held-out test set
+        pipe.fit(X_train, y_train)
+        y_pred = pipe.predict(X_test)
+        test_rmse = float(root_mean_squared_error(y_test, y_pred))
+        test_mae = float(mean_absolute_error(y_test, y_pred))
+        test_r2 = float(r2_score(y_test, y_pred))
+
+        cv_results[name] = {"RMSE": cv_rmse, "MAE": cv_mae, "R2": cv_r2}
+        test_results[name] = {"RMSE": test_rmse, "MAE": test_mae, "R2": test_r2}
+        trained_pipelines[name] = pipe
+
+        print(f"[{name}]")
+        print(f"  CV   -> RMSE: ${cv_rmse:,.2f} | MAE: ${cv_mae:,.2f} | R2: {cv_r2:.4f}")
+        print(f"  TEST -> RMSE: ${test_rmse:,.2f} | MAE: ${test_mae:,.2f} | R2: {test_r2:.4f}\n")
+
+    # Tuned HistGradientBoosting with optimal hyperparameters from GridSearchCV
+    print("[INFO] Training Tuned HistGradientBoostingRegressor (Best Parameters)...")
+    tuned_params = {
+        "learning_rate": 0.1,
+        "max_depth": None,
+        "max_leaf_nodes": 63,
+        "min_samples_leaf": 20,
+        "l2_regularization": 0.1,
+        "random_state": RANDOM_STATE
+    }
+
+    tuned_hgb = HistGradientBoostingRegressor(**tuned_params)
+    tuned_pipe = Pipeline([
+        ("preprocess", preprocessor),
+        ("model", tuned_hgb)
+    ])
+
+    tuned_scores = cross_validate(tuned_pipe, X_train, y_train, cv=cv, scoring=scoring, n_jobs=-1)
+    tuned_cv_rmse = -float(tuned_scores["test_rmse"].mean())
+    tuned_cv_mae = -float(tuned_scores["test_mae"].mean())
+    tuned_cv_r2 = float(tuned_scores["test_r2"].mean())
+
+    tuned_pipe.fit(X_train, y_train)
+    y_test_pred = tuned_pipe.predict(X_test)
+    tuned_test_rmse = float(root_mean_squared_error(y_test, y_test_pred))
+    tuned_test_mae = float(mean_absolute_error(y_test, y_test_pred))
+    tuned_test_r2 = float(r2_score(y_test, y_test_pred))
+
+    name_tuned = "Tuned HistGradientBoosting (Best Model)"
+    cv_results[name_tuned] = {"RMSE": tuned_cv_rmse, "MAE": tuned_cv_mae, "R2": tuned_cv_r2}
+    test_results[name_tuned] = {"RMSE": tuned_test_rmse, "MAE": tuned_test_mae, "R2": tuned_test_r2}
+    trained_pipelines[name_tuned] = tuned_pipe
+
+    print(f"[{name_tuned}]")
+    print(f"  CV   -> RMSE: ${tuned_cv_rmse:,.2f} | MAE: ${tuned_cv_mae:,.2f} | R2: {tuned_cv_r2:.4f}")
+    print(f"  TEST -> RMSE: ${tuned_test_rmse:,.2f} | MAE: ${tuned_test_mae:,.2f} | R2: {tuned_test_r2:.4f}")
+
+    # Residuals for diagnostics
+    residuals = y_test.values - y_test_pred
+
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    payload = {
+        "model": tuned_pipe,
+        "model_name": name_tuned,
+        "cv_results": cv_results,
+        "test_results": test_results,
+        "features": ALL_FEATURES,
+        "best_params": tuned_params,
+        "sample_test_y": y_test.values[:1000],
+        "sample_test_pred": y_test_pred[:1000],
+        "residuals": residuals[:1000],
+        "rmse": tuned_test_rmse
+    }
+
+    joblib.dump(payload, MODEL_PATH)
+    print(f"\n[OK] Model & evaluation metrics successfully saved to {MODEL_PATH}")
+    return payload
+
+
+if __name__ == "__main__":
+    train_and_evaluate()

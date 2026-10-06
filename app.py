@@ -1,317 +1,274 @@
 """
-app.py  —  Ghar Bazaar: Indian House Price Prediction App
-Tabs: Predict | Data Explorer | Model Performance | Compare Properties
-Compatible with Streamlit 1.58+ | Auto-bootstraps model on first run
+app.py  —  California House Price Prediction App (Streamlit)
+Based on End-to-End Machine Learning Project: California Housing Prices Dataset
+Features:
+- Live Interactive House Price Valuation & Geographic Mapping
+- Exploratory Data Analysis & Spatial Visualizations
+- Multi-Model Benchmarking (Linear, Ridge, Lasso, Random Forest, Tuned HistGB)
+- Residual Diagnostics & Property Comparison Engine
 """
 
 import os
-import warnings
 import joblib
+import warnings
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 from utils import (
-    CITIES, CITY_EMOJIS, CITY_INFO, CITY_PRICE_MULT,
-    FURNISHING_OPTIONS, FLOOR_OPTIONS,
-    format_price, price_range, age_label, build_input_df,
+    ALL_FEATURES,
+    NUMERICAL_FEATURES,
+    CATEGORICAL_FEATURES,
+    TARGET_COL,
+    OCEAN_PROXIMITY_OPTIONS,
+    OCEAN_PROXIMITY_EMOJIS,
+    CALIFORNIA_PRESETS,
+    format_usd,
+    calculate_price_range,
+    build_input_df,
+    create_preprocessor
 )
 
 warnings.filterwarnings("ignore")
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Page config
+# Page Config & Custom Styling
 # ═══════════════════════════════════════════════════════════════════════════════
 st.set_page_config(
-    page_title="Ghar Bazaar | Indian House Price AI",
-    page_icon="🏡",
+    page_title="California House Price AI | Machine Learning App",
+    page_icon="🏠",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded"
 )
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# CSS
-# ═══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap');
 
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+html, body, [class*="css"] {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
 
 .stApp {
-    background: linear-gradient(135deg, #0a0a1a 0%, #1a0533 45%, #0d1b2a 100%);
-    min-height: 100vh;
+    background: radial-gradient(circle at 10% 20%, #0f172a 0%, #020617 90%);
+    color: #f8fafc;
 }
 
 [data-testid="stSidebar"] {
-    background: rgba(255,255,255,0.04);
-    border-right: 1px solid rgba(255,255,255,0.08);
-    backdrop-filter: blur(14px);
+    background: rgba(15, 23, 42, 0.75);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(16px);
 }
 
-/* Hero */
-.hero {
-    background: linear-gradient(135deg, rgba(255,153,0,0.18) 0%, rgba(19,136,8,0.12) 50%, rgba(6,6,180,0.18) 100%);
-    border: 1px solid rgba(255,153,0,0.3);
+/* Hero Section */
+.hero-container {
+    background: linear-gradient(135deg, rgba(30, 58, 138, 0.35) 0%, rgba(15, 23, 42, 0.6) 50%, rgba(88, 28, 135, 0.25) 100%);
+    border: 1px solid rgba(96, 165, 250, 0.25);
     border-radius: 20px;
-    padding: 2.5rem 2rem;
-    text-align: center;
+    padding: 2.2rem 2rem;
     margin-bottom: 1.5rem;
-    backdrop-filter: blur(10px);
+    box-shadow: 0 12px 40px -10px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(12px);
+    text-align: center;
 }
-.hero h1 {
-    font-family: 'Outfit', sans-serif;
-    font-size: 2.8rem;
-    font-weight: 800;
-    background: linear-gradient(90deg, #ff9900, #ffffff, #138808);
+
+.hero-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 2.6rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    background: linear-gradient(90deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.4rem;
 }
-.hero .tagline { color: #94a3b8; font-size: 1rem; margin: 0; }
-.hero .flag { font-size: 1.5rem; margin-bottom: 0.4rem; }
 
-/* Cards */
-.card {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.09);
+.hero-subtitle {
+    color: #94a3b8;
+    font-size: 1.05rem;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+/* Glass Cards */
+.glass-card {
+    background: rgba(30, 41, 59, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 16px;
     padding: 1.4rem;
     backdrop-filter: blur(8px);
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: transform 0.2s ease, border-color 0.2s ease;
 }
-.card:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(255,153,0,0.15); }
 
-/* Metric cards */
-.metric-card {
-    background: linear-gradient(135deg, rgba(255,153,0,0.12), rgba(19,136,8,0.10));
-    border: 1px solid rgba(255,153,0,0.25);
+.glass-card:hover {
+    border-color: rgba(96, 165, 250, 0.4);
+    transform: translateY(-2px);
+}
+
+/* Metric Display Cards */
+.kpi-card {
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.8));
+    border: 1px solid rgba(148, 163, 184, 0.15);
     border-radius: 14px;
     padding: 1.1rem;
     text-align: center;
 }
-.metric-label { font-size: 0.75rem; font-weight: 700; letter-spacing: .08em;
-                text-transform: uppercase; color: #94a3b8; margin-bottom: .25rem; }
-.metric-value { font-family: 'Outfit', sans-serif; font-size: 1.55rem;
-                font-weight: 700; color: #f1f5f9; }
-.metric-sub   { font-size: 0.76rem; color: #64748b; margin-top: .15rem; }
 
-/* Predict result box */
-.predict-box {
-    background: linear-gradient(135deg, #c05800 0%, #1a6b00 50%, #000087 100%);
+.kpi-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #94a3b8;
+    margin-bottom: 0.3rem;
+}
+
+.kpi-value {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #f8fafc;
+}
+
+.kpi-sub {
+    font-size: 0.75rem;
+    color: #64748b;
+    margin-top: 0.2rem;
+}
+
+/* Prediction Showcase */
+.prediction-box {
+    background: linear-gradient(135deg, #1e3a8a 0%, #312e81 50%, #4c1d95 100%);
+    border: 1px solid rgba(129, 140, 248, 0.4);
     border-radius: 20px;
-    padding: 2.5rem;
+    padding: 2.2rem 1.5rem;
     text-align: center;
-    box-shadow: 0 20px 60px rgba(255,153,0,0.35);
-    animation: saffron-glow 3s ease-in-out infinite;
+    box-shadow: 0 15px 45px rgba(49, 46, 129, 0.45);
 }
-@keyframes saffron-glow {
-    0%,100% { box-shadow: 0 20px 60px rgba(255,153,0,0.35); }
-    50%      { box-shadow: 0 20px 80px rgba(255,153,0,0.60); }
+
+.prediction-label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: rgba(255, 255, 255, 0.75);
+    margin-bottom: 0.5rem;
 }
-.predict-price { font-family: 'Outfit',sans-serif; font-size:3rem; font-weight:800; color:#fff; line-height:1.1; }
-.predict-label { font-size:.82rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:rgba(255,255,255,.6); margin-bottom:.6rem; }
-.predict-range { font-size:.95rem; color:rgba(255,255,255,.7); margin-top:.5rem; }
 
-/* Section headers */
-.section-header { font-family:'Outfit',sans-serif; font-size:1.35rem; font-weight:700;
-                  color:#f1f5f9; margin:1.4rem 0 .7rem; }
+.prediction-price {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 3.2rem;
+    font-weight: 800;
+    color: #ffffff;
+    line-height: 1.1;
+}
 
-/* Tags */
-.tag { display:inline-block; background:rgba(255,153,0,.15); border:1px solid rgba(255,153,0,.3);
-       border-radius:99px; padding:.18rem .7rem; font-size:.78rem; font-weight:500;
-       color:#ffb347; margin:.12rem; }
+.prediction-range {
+    font-size: 0.95rem;
+    color: rgba(224, 231, 255, 0.85);
+    margin-top: 0.6rem;
+}
 
-/* Tabs */
-[data-testid="stTabs"] [role="tab"] { font-weight:600; color:#94a3b8 !important;
-                                      border-radius:10px 10px 0 0; padding:.55rem 1.1rem; }
-[data-testid="stTabs"] [aria-selected="true"] { color:#ff9900 !important;
-    background:rgba(255,153,0,.10) !important; border-bottom:2px solid #ff9900 !important; }
-
-/* Buttons */
+/* Tabs and Buttons */
 .stButton > button {
-    background: linear-gradient(135deg, #ff9900, #138808);
-    color: white; font-weight: 700; font-size: 1rem;
-    border: none; border-radius: 12px; padding: .7rem 2rem;
-    width: 100%; transition: all .2s;
-    box-shadow: 0 4px 15px rgba(255,153,0,.35);
+    background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%);
+    color: white;
+    font-weight: 700;
+    font-size: 1rem;
+    border: none;
+    border-radius: 12px;
+    padding: 0.75rem 1.8rem;
+    box-shadow: 0 4px 18px rgba(37, 99, 235, 0.35);
+    transition: all 0.2s ease;
 }
-.stButton > button:hover { transform:translateY(-2px); box-shadow:0 8px 25px rgba(255,153,0,.5); }
 
-hr { border-color:rgba(255,255,255,.07) !important; }
-::-webkit-scrollbar { width:6px; }
-::-webkit-scrollbar-track { background:transparent; }
-::-webkit-scrollbar-thumb { background:rgba(255,153,0,.4); border-radius:3px; }
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 24px rgba(37, 99, 235, 0.55);
+}
+
+/* Badge Tags */
+.badge {
+    display: inline-block;
+    background: rgba(96, 165, 250, 0.12);
+    border: 1px solid rgba(96, 165, 250, 0.3);
+    color: #93c5fd;
+    padding: 0.2rem 0.65rem;
+    border-radius: 9999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin: 0.2rem;
+}
+
+hr {
+    border-color: rgba(255, 255, 255, 0.08) !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# ── Plotly theme (NO margin here — override per chart) ────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# Plotly Theme Settings
+# ═══════════════════════════════════════════════════════════════════════════════
 PLOT_BASE = dict(
     template="plotly_dark",
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(family="Inter,sans-serif", color="#94a3b8"),
-    title_font=dict(family="Outfit,sans-serif", color="#f1f5f9", size=15),
-    colorway=["#ff9900","#138808","#0606b4","#e94560","#00b4d8","#9b5de5","#f15bb5"],
+    font=dict(family="Plus Jakarta Sans, sans-serif", color="#94a3b8"),
+    title_font=dict(family="Space Grotesk, sans-serif", color="#f8fafc", size=15),
+    colorway=["#3b82f6", "#8b5cf6", "#ec4899", "#10b981", "#f59e0b", "#06b6d4"]
 )
-PLOT_MARGIN = dict(l=20, r=20, t=45, b=20)
+PLOT_MARGIN = dict(l=25, r=25, t=45, b=25)
 
 
-def apply_layout(fig, **extra):
-    fig.update_layout(**PLOT_BASE, margin=PLOT_MARGIN, **extra)
+def apply_layout(fig, **kwargs):
+    fig.update_layout(**PLOT_BASE, margin=PLOT_MARGIN, **kwargs)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Load model & data
+# Auto-Bootstrap & Data/Model Caching
 # ═══════════════════════════════════════════════════════════════════════════════
+@st.cache_resource(show_spinner=False)
+def load_or_train_model():
+    model_path = os.path.join("models", "model.pkl")
+    data_path = os.path.join("data", "housing.csv")
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Auto-Bootstrap: generate data + train model if not present (Streamlit Cloud)
-# ═══════════════════════════════════════════════════════════════════════════════
-def auto_bootstrap():
-    """Run data generation + training inline if artifacts are missing."""
-    import numpy as np
-    import pandas as pd
-    from sklearn.compose import ColumnTransformer
-    from sklearn.preprocessing import OneHotEncoder, StandardScaler
-    from sklearn.pipeline import Pipeline
-    from sklearn.linear_model import LinearRegression
-    from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-    from sklearn.model_selection import train_test_split, cross_val_score
-    from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+    if os.path.exists(model_path):
+        return joblib.load(model_path)
 
-    # ── Generate data ──────────────────────────────────────────────────────────
-    if not os.path.exists("data/house_data.csv"):
-        np.random.seed(42)
-        N = 1500
-        CITY_DATA = {
-            "Mumbai - Bandra":2.80,"Mumbai - Andheri":2.20,"Mumbai - Thane":1.60,
-            "Delhi - South Delhi":2.50,"Delhi - Dwarka":1.80,
-            "Noida - Sector 62":1.40,"Gurgaon - DLF Phase":2.00,
-            "Bengaluru - Koramangala":2.10,"Bengaluru - Whitefield":1.75,"Bengaluru - Sarjapur":1.55,
-            "Hyderabad - Gachibowli":1.65,"Hyderabad - Banjara Hills":1.90,
-            "Pune - Koregaon Park":1.70,"Pune - Hinjewadi":1.35,"Pune - Viman Nagar":1.50,
-            "Chennai - Adyar":1.80,"Chennai - OMR":1.40,
-            "Kolkata - Salt Lake":1.45,"Kolkata - New Town":1.30,
-            "Ahmedabad - SG Highway":1.25,"Jaipur - Malviya Nagar":1.20,"Kochi - Marine Drive":1.55,
-        }
-        city_names = list(CITY_DATA.keys())
-        city_probs = [0.07,0.06,0.05,0.06,0.05,0.05,0.05,0.07,0.06,0.05,
-                      0.05,0.04,0.05,0.04,0.04,0.04,0.04,0.04,0.03,0.04,0.04,0.03]
-        city_probs = [p/sum(city_probs) for p in city_probs]
-        locations  = np.random.choice(city_names, size=N, p=city_probs)
-        bedrooms   = np.random.choice([1,2,3,4,5], size=N, p=[0.10,0.25,0.38,0.20,0.07])
-        bathrooms  = np.clip(bedrooms - np.random.choice([0,1], size=N, p=[0.65,0.35]),1,5)
-        parking    = np.random.choice([0,1,2,3], size=N, p=[0.12,0.48,0.30,0.10])
-        age        = np.random.randint(0, 35, size=N)
-        furnishing = np.random.choice(["Unfurnished","Semi-Furnished","Fully Furnished"],
-                                      size=N, p=[0.30,0.45,0.25])
-        floor_type = np.random.choice(["Ground","Low (1-4)","Mid (5-10)","High (11+)"],
-                                      size=N, p=[0.15,0.35,0.30,0.20])
-        base_area  = bedrooms * 400
-        area       = (base_area + np.random.normal(0,180,size=N)).clip(350,5500).astype(int)
-        furn_mult  = {"Unfurnished":0.90,"Semi-Furnished":1.00,"Fully Furnished":1.12}
-        flr_mult   = {"Ground":0.95,"Low (1-4)":1.00,"Mid (5-10)":1.04,"High (11+)":1.08}
-        price = (
-            20.0 + area*0.030 + bedrooms*4.0 + bathrooms*3.0 + parking*2.5
-            - age*0.40 + np.random.normal(0,5,size=N)
-        ) * np.array([CITY_DATA[l] for l in locations]) \
-          * np.array([furn_mult[f] for f in furnishing]) \
-          * np.array([flr_mult[f]  for f in floor_type])
-        price = price.clip(10, 800).round(2)
-        df_gen = pd.DataFrame({
-            "Area":area,"Bedrooms":bedrooms,"Bathrooms":bathrooms.astype(int),
-            "Parking":parking,"Age":age,"Furnishing":furnishing,
-            "Floor":floor_type,"City":locations,"Price":price,
-        })
-        os.makedirs("data", exist_ok=True)
-        df_gen.to_csv("data/house_data.csv", index=False)
-
-    # ── Train models ───────────────────────────────────────────────────────────
-    df_t = pd.read_csv("data/house_data.csv")
-    FEATURES = ["Area","Bedrooms","Bathrooms","Parking","Age","Furnishing","Floor","City"]
-    X = df_t[FEATURES];  y = df_t["Price"]
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-    num_f = ["Area","Bedrooms","Bathrooms","Parking","Age"]
-    cat_f = ["Furnishing","Floor","City"]
-    pre   = ColumnTransformer([
-        ("num", StandardScaler(),                       num_f),
-        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_f),
-    ])
-    models = {
-        "Linear Regression": LinearRegression(),
-        "Random Forest":     RandomForestRegressor(n_estimators=150, random_state=42, n_jobs=-1),
-        "Gradient Boosting": GradientBoostingRegressor(n_estimators=150, random_state=42),
-    }
-    results, pipelines = {}, {}
-    for name, reg in models.items():
-        pipe = Pipeline([("preprocessor", pre), ("regressor", reg)])
-        pipe.fit(X_train, y_train)
-        preds = pipe.predict(X_test)
-        cv    = cross_val_score(pipe, X, y, cv=5, scoring="r2").mean()
-        results[name] = {
-            "MAE":  mean_absolute_error(y_test, preds),
-            "RMSE": float(np.sqrt(mean_squared_error(y_test, preds))),
-            "R2":   r2_score(y_test, preds),
-            "CV_R2": cv,
-        }
-        pipelines[name] = pipe
-
-    best = max(results, key=lambda k: results[k]["CV_R2"])
-    os.makedirs("models", exist_ok=True)
-    joblib.dump({
-        "model": pipelines[best], "model_name": best,
-        "all_results": results, "features": FEATURES,
-        "all_pipelines": pipelines,
-    }, "models/model.pkl")
+    # If model is not present, train automatically on first startup
+    if os.path.exists(data_path):
+        from train import train_and_evaluate
+        return train_and_evaluate()
+    return None
 
 
-# ── Run bootstrap silently if model missing ────────────────────────────────────
-if not os.path.exists("models/model.pkl"):
-    with st.spinner("Setting up AI model for first time... Please wait ~30 seconds"):
-        auto_bootstrap()
-    st.cache_resource.clear()
-    st.cache_data.clear()
+@st.cache_data(show_spinner=False)
+def load_dataset():
+    data_path = os.path.join("data", "housing.csv")
+    if os.path.exists(data_path):
+        return pd.read_csv(data_path)
+    return None
 
 
-@st.cache_resource(show_spinner="Loading AI model ...")
-def load_model():
-    path = "models/model.pkl"
-    return joblib.load(path) if os.path.exists(path) else None
-
-
-@st.cache_data(show_spinner="Loading dataset ...")
-def load_data():
-    path = "data/house_data.csv"
-    return pd.read_csv(path) if os.path.exists(path) else None
-
-
-payload     = load_model()
-df          = load_data()
+payload = load_or_train_model()
+df_data = load_dataset()
 model_ready = payload is not None
-data_ready  = df is not None
-
+data_ready = df_data is not None
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sidebar
 # ═══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
     st.markdown("""
-    <div style='text-align:center;padding:1rem 0;'>
-        <div style='font-size:2.5rem;'>🏡</div>
-        <div style='font-family:Outfit,sans-serif;font-size:1.35rem;font-weight:800;
-                    background:linear-gradient(90deg,#ff9900,#ffffff,#138808);
-                    -webkit-background-clip:text;-webkit-text-fill-color:transparent;'>
-            Ghar Bazaar
+    <div style='text-align: center; padding: 0.8rem 0;'>
+        <div style='font-size: 2.8rem;'>🏡</div>
+        <div style='font-family: Space Grotesk; font-size: 1.45rem; font-weight: 700; color: #60a5fa;'>
+            California Housing AI
         </div>
-        <div style='font-size:.76rem;color:#64748b;margin-top:.2rem;'>
-            Indian Real Estate AI
+        <div style='font-size: 0.78rem; color: #94a3b8; margin-top: 0.2rem;'>
+            End-to-End Machine Learning System
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -319,598 +276,590 @@ with st.sidebar:
 
     if model_ready:
         mn = payload["model_name"]
-        r  = payload["all_results"][mn]
-        st.markdown("**Active Model**")
+        test_r2 = payload["test_results"][mn]["R2"]
+        test_rmse = payload["test_results"][mn]["RMSE"]
+
+        st.markdown("**⭐ Active Primary Model**")
         st.success(mn)
         c1, c2 = st.columns(2)
-        c1.metric("R2 Score", f"{r['R2']:.3f}")
-        c2.metric("MAE", f"Rs.{r['MAE']:.1f}L")
+        c1.metric("Test R²", f"{test_r2:.3f}")
+        c2.metric("Test RMSE", f"${test_rmse/1000:.1f}k")
         st.markdown("---")
     else:
-        st.warning("Model not trained.\nRun:\n```\npython generate_data.py\npython train.py\n```")
-        st.markdown("---")
+        st.warning("Model loading or training in progress...")
 
-    st.markdown("**Quick Guide**")
+    st.markdown("**📚 Project Specifications**")
     st.markdown("""
-    <div style='font-size:.84rem;color:#94a3b8;line-height:1.9;'>
-    1. <b>Predict</b> — Enter property details<br>
-    2. <b>Data Explorer</b> — Visualize dataset<br>
-    3. <b>Model Performance</b> — Compare 3 models<br>
-    4. <b>Compare</b> — Side-by-side analysis
+    <div style='font-size: 0.82rem; color: #94a3b8; line-height: 1.8;'>
+    • <b>Dataset:</b> California Housing (20,640 records)<br>
+    • <b>Pipeline:</b> Median Imputer + Scaler + One-Hot<br>
+    • <b>Algorithms:</b> Linear, Ridge, Lasso, RF, HistGB<br>
+    • <b>Tuning:</b> 5-Fold Cross Validation + GridSearch<br>
+    • <b>Primary Metric:</b> Root Mean Squared Error (RMSE)
     </div>
     """, unsafe_allow_html=True)
     st.markdown("---")
+
     st.markdown("""
-    <div style='font-size:.73rem;color:#475569;text-align:center;'>
-    Streamlit · Scikit-learn · Plotly<br>
-    22 Indian City Localities · 1500 Records
+    <div style='font-size: 0.74rem; color: #64748b; text-align: center;'>
+    Built with Scikit-learn · Streamlit · Plotly<br>
+    Standard Machine Learning Project 15.4
     </div>
     """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Hero
+# Hero Section
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
-<div class="hero">
-    <div class="flag">🇮🇳</div>
-    <h1>Ghar Bazaar — Indian House Price AI</h1>
-    <p class="tagline">Predict property prices across 22 Indian city localities · Powered by Machine Learning</p>
+<div class="hero-container">
+    <div class="hero-title">California House Price Prediction AI</div>
+    <div class="hero-subtitle">
+        An interactive machine learning application built on the California Housing Prices dataset.
+        Featuring automated preprocessing pipelines, 5-fold cross-validated model selection, and hyperparameter-tuned gradient boosting.
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Tabs
+# Application Tabs
 # ═══════════════════════════════════════════════════════════════════════════════
 tab1, tab2, tab3, tab4 = st.tabs([
-    "🏡  Predict Price",
-    "📊  Data Explorer",
-    "📈  Model Performance",
-    "🔍  Compare Properties",
+    "🏡  Interactive Valuation",
+    "🗺️  Geospatial & Data Explorer",
+    "📈  Model Benchmarks & Residuals",
+    "🔍  Property Comparison"
 ])
 
-
 # ╔══════════════════════════════════════════════════════════════════╗
-# ║  TAB 1 — PREDICT                                                ║
+# ║  TAB 1 — INTERACTIVE VALUATION                                  ║
 # ╚══════════════════════════════════════════════════════════════════╝
 with tab1:
     if not model_ready:
-        st.warning("Run `python generate_data.py` then `python train.py` to get started.")
+        st.warning("Please wait for model training to complete.")
         st.stop()
 
-    st.markdown('<div class="section-header">🏡 Enter Property Details</div>', unsafe_allow_html=True)
-    col_left, col_right = st.columns([1.1, 0.9], gap="large")
+    st.markdown("### 📍 Configure Property Features")
 
-    with col_left:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
+    # Region Preset Selector
+    selected_preset_name = st.selectbox(
+        "⚡ Quick-Fill with a California Location Preset:",
+        list(CALIFORNIA_PRESETS.keys()),
+        index=1,
+        help="Choose a pre-configured California region or customize features manually."
+    )
 
-        r1c1, r1c2 = st.columns(2)
-        with r1c1:
-            area = st.slider("Area (sq ft)", 350, 5500, 1200, step=50,
-                             help="Super built-up area in square feet")
-        with r1c2:
-            age = st.slider("Property Age (yrs)", 0, 35, 3,
-                            help="0 = Under construction / brand new")
+    preset_data = CALIFORNIA_PRESETS[selected_preset_name]
 
-        r2c1, r2c2, r2c3 = st.columns(3)
-        with r2c1:
-            bedrooms  = st.selectbox("Bedrooms",  [1, 2, 3, 4, 5], index=2)
-        with r2c2:
-            bathrooms = st.selectbox("Bathrooms", [1, 2, 3, 4, 5], index=1)
-        with r2c3:
-            parking   = st.selectbox("Parking",   [0, 1, 2, 3],    index=1)
+    col_form, col_pred = st.columns([1.15, 0.85], gap="large")
 
-        furnishing = st.selectbox("Furnishing",
-                                  FURNISHING_OPTIONS,
-                                  index=1,
-                                  help="Affects ~10-12% price difference")
+    with col_form:
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
 
-        floor = st.selectbox("Floor",
-                             FLOOR_OPTIONS,
-                             index=1,
-                             help="Higher floors command a premium in most Indian cities")
+        st.markdown("##### 1. Geographic Location & Coastal Proximity")
+        g1, g2, g3 = st.columns([1, 1, 1.2])
 
-        city = st.selectbox(
-            "City / Locality",
-            CITIES,
-            format_func=lambda c: f"{CITY_EMOJIS[c]}  {c}",
-        )
-        st.markdown(
-            f'<div style="font-size:.82rem;color:#64748b;margin-top:-.35rem;margin-bottom:.5rem;">'
-            f'{CITY_INFO[city]}</div>',
-            unsafe_allow_html=True,
-        )
+        default_lon = preset_data["longitude"] if preset_data else -122.25
+        default_lat = preset_data["latitude"] if preset_data else 37.85
+        default_ocean = preset_data["ocean_proximity"] if preset_data else "NEAR BAY"
+
+        with g1:
+            longitude = st.number_input(
+                "Longitude",
+                min_value=-124.5,
+                max_value=-114.0,
+                value=float(default_lon),
+                step=0.01,
+                format="%.2f",
+                help="West longitude coordinate (California range: -124.3 to -114.3)"
+            )
+        with g2:
+            latitude = st.number_input(
+                "Latitude",
+                min_value=32.0,
+                max_value=42.0,
+                value=float(default_lat),
+                step=0.01,
+                format="%.2f",
+                help="North latitude coordinate (California range: 32.5 to 42.0)"
+            )
+        with g3:
+            ocean_proximity = st.selectbox(
+                "Ocean Proximity",
+                OCEAN_PROXIMITY_OPTIONS,
+                index=OCEAN_PROXIMITY_OPTIONS.index(default_ocean),
+                format_func=lambda o: OCEAN_PROXIMITY_EMOJIS.get(o, o)
+            )
+
+        st.markdown("---")
+        st.markdown("##### 2. Demographics & Economic Status")
+        d1, d2 = st.columns(2)
+
+        default_income = preset_data["median_income"] if preset_data else 8.32
+        default_age = preset_data["housing_median_age"] if preset_data else 41.0
+
+        with d1:
+            median_income = st.slider(
+                "Block Median Income ($10,000s)",
+                min_value=0.5,
+                max_value=15.0,
+                value=float(default_income),
+                step=0.1,
+                help="Measured in tens of thousands of USD. For example, 5.0 represents $50,000 median income."
+            )
+            st.caption(f"💵 Household income estimate: **${median_income * 10000:,.0f} / year**")
+
+        with d2:
+            housing_median_age = st.slider(
+                "Median Building Age (Years)",
+                min_value=1.0,
+                max_value=52.0,
+                value=float(default_age),
+                step=1.0,
+                help="Median age of structures in the block group."
+            )
+            st.caption(f"🏗️ Construction vintage: **approx. {int(2026 - housing_median_age)}**")
+
+        st.markdown("---")
+        st.markdown("##### 3. Block Housing Volume & Density")
+        v1, v2, v3, v4 = st.columns(4)
+
+        default_rooms = preset_data["total_rooms"] if preset_data else 2500
+        default_bedrooms = preset_data["total_bedrooms"] if preset_data else 450
+        default_pop = preset_data["population"] if preset_data else 1100
+        default_hh = preset_data["households"] if preset_data else 420
+
+        with v1:
+            total_rooms = st.number_input("Total Rooms", min_value=10, max_value=40000, value=int(default_rooms), step=50)
+        with v2:
+            total_bedrooms = st.number_input("Total Bedrooms", min_value=2, max_value=8000, value=int(default_bedrooms), step=10)
+        with v3:
+            population = st.number_input("Block Population", min_value=5, max_value=35000, value=int(default_pop), step=25)
+        with v4:
+            households = st.number_input("Total Households", min_value=2, max_value=6000, value=int(default_hh), step=10)
+
+        # Derived Ratios
+        rooms_per_hh = total_rooms / max(1, households)
+        bedrooms_per_room = total_bedrooms / max(1, total_rooms)
+        pop_per_hh = population / max(1, households)
+
+        st.caption(f"📊 Derived: **{rooms_per_hh:.1f}** rooms/hh · **{bedrooms_per_room:.2f}** bed ratio · **{pop_per_hh:.1f}** people/hh")
+
         st.markdown("</div>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
-        predict_btn = st.button("Predict House Price", use_container_width=True)  # button OK
 
-    with col_right:
-        # Property summary tags
-        st.markdown('<div class="section-header">Property Summary</div>', unsafe_allow_html=True)
-        tags_html = (
-            f'<span class="tag">Area: {area:,} sqft</span>'
-            f'<span class="tag">BHK: {bedrooms}</span>'
-            f'<span class="tag">Bath: {bathrooms}</span>'
-            f'<span class="tag">Park: {parking}</span>'
-            f'<span class="tag">{age_label(age)}</span>'
-            f'<span class="tag">{furnishing}</span>'
-            f'<span class="tag">{floor} Floor</span>'
-            f'<span class="tag">{CITY_EMOJIS[city]} {city.split(" - ")[0]}</span>'
+        predict_btn = st.button("🔮 Calculate House Price Valuation", width="stretch")
+
+    with col_pred:
+        # Run prediction
+        input_row = build_input_df(
+            longitude=longitude,
+            latitude=latitude,
+            housing_median_age=housing_median_age,
+            total_rooms=total_rooms,
+            total_bedrooms=total_bedrooms,
+            population=population,
+            households=households,
+            median_income=median_income,
+            ocean_proximity=ocean_proximity
         )
-        st.markdown(f'<div class="card">{tags_html}</div>', unsafe_allow_html=True)
 
-        if predict_btn or "last_pred" in st.session_state:
-            if predict_btn:
-                inp  = build_input_df(area, bedrooms, bathrooms, parking, age,
-                                      furnishing, floor, city)
-                pred = payload["model"].predict(inp)[0]
-                st.session_state["last_pred"] = pred
+        model = payload["model"]
+        prediction = float(model.predict(input_row)[0])
+        rmse_val = payload["test_results"][payload["model_name"]]["RMSE"]
+        lower_bound, upper_bound = calculate_price_range(prediction, rmse=rmse_val)
 
-            pred = st.session_state["last_pred"]
-            lo, hi = price_range(pred)
-            ppsf   = (pred * 1e5) / area
+        st.markdown(f"""
+        <div class="prediction-box">
+            <div class="prediction-label">Estimated Median House Value</div>
+            <div class="prediction-price">{format_usd(prediction)}</div>
+            <div class="prediction-range">68% Confidence Interval: <b>{lower_bound} — {upper_bound}</b></div>
+        </div>
+        """, unsafe_allow_html=True)
 
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Location mini-map using Streamlit's built-in map
+        st.markdown("##### 📌 Coordinates on California Map")
+        map_df = pd.DataFrame([{"lat": latitude, "lon": longitude}])
+        st.map(map_df, zoom=7, width="stretch")
+
+        # Summary Metrics
+        m1, m2 = st.columns(2)
+        with m1:
             st.markdown(f"""
-            <div class="predict-box" style="margin-top:1.2rem;">
-                <div class="predict-label">Estimated Market Value</div>
-                <div class="predict-price">{format_price(pred)}</div>
-                <div class="predict-range">Range: {lo} &mdash; {hi}</div>
+            <div class="kpi-card">
+                <div class="kpi-title">Proximity Tier</div>
+                <div class="kpi-value" style="font-size: 1.15rem;">{ocean_proximity}</div>
+                <div class="kpi-sub">Coastal Zone</div>
             </div>
             """, unsafe_allow_html=True)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-            m1, m2, m3 = st.columns(3)
-            for col, lbl, val in [
-                (m1, "Price / Sq Ft", f"Rs.{ppsf:,.0f}"),
-                (m2, "Model", payload["model_name"].split()[0]),
-                (m3, "R2 Score", f"{payload['all_results'][payload['model_name']]['R2']:.3f}"),
-            ]:
-                col.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">{lbl}</div>
-                    <div class="metric-value" style="font-size:1.1rem;">{val}</div>
-                </div>""", unsafe_allow_html=True)
-
-            # Feature radar
-            st.markdown('<div class="section-header">Feature Influence</div>', unsafe_allow_html=True)
-            mults = list(CITY_PRICE_MULT.values())
-            city_mult = CITY_PRICE_MULT[city]
-            norm_loc  = (city_mult - min(mults)) / (max(mults) - min(mults))
-            furnish_score = {"Unfurnished": 0.3, "Semi-Furnished": 0.6, "Fully Furnished": 1.0}
-            floor_score   = {"Ground": 0.4, "Low (1-4)": 0.6, "Mid (5-10)": 0.8, "High (11+)": 1.0}
-
-            cats = ["Area", "BHK", "Bathrooms", "Age Factor", "Location", "Furnishing", "Floor"]
-            vals = [
-                min(area / 5500, 1.0),
-                bedrooms / 5,
-                bathrooms / 5,
-                1 - age / 35,
-                norm_loc,
-                furnish_score[furnishing],
-                floor_score[floor],
-            ]
-
-            fig_radar = go.Figure(go.Scatterpolar(
-                r=vals + [vals[0]],
-                theta=cats + [cats[0]],
-                fill="toself",
-                fillcolor="rgba(255,153,0,0.20)",
-                line=dict(color="#ff9900", width=2),
-                marker=dict(size=6, color="#ffb347"),
-            ))
-            fig_radar.update_layout(
-                **PLOT_BASE,
-                margin=dict(l=35, r=35, t=18, b=18),
-                polar=dict(
-                    bgcolor="rgba(255,255,255,0.03)",
-                    radialaxis=dict(visible=True, range=[0, 1.1],
-                                   gridcolor="rgba(255,255,255,0.08)",
-                                   tickfont=dict(size=9)),
-                    angularaxis=dict(gridcolor="rgba(255,255,255,0.08)",
-                                     tickfont=dict(size=10, color="#94a3b8")),
-                ),
-                showlegend=False,
-                height=280,
-            )
-            st.plotly_chart(fig_radar, width="stretch")
-
-        else:
-            st.markdown("""
-            <div class="card" style="text-align:center;padding:3rem 1rem;margin-top:1.2rem;">
-                <div style="font-size:3rem;margin-bottom:.7rem;">🔮</div>
-                <div style="font-family:Outfit,sans-serif;font-size:1.15rem;font-weight:600;color:#f1f5f9;">
-                    Your prediction will appear here
-                </div>
-                <div style="font-size:.87rem;color:#64748b;margin-top:.35rem;">
-                    Fill in property details and click Predict
-                </div>
+        with m2:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-title">Income Level</div>
+                <div class="kpi-value" style="font-size: 1.15rem;">${median_income*10000:,.0f}</div>
+                <div class="kpi-sub">Median Block Income</div>
             </div>
             """, unsafe_allow_html=True)
-
 
 # ╔══════════════════════════════════════════════════════════════════╗
-# ║  TAB 2 — DATA EXPLORER                                          ║
+# ║  TAB 2 — GEOSPATIAL & DATA EXPLORER                             ║
 # ╚══════════════════════════════════════════════════════════════════╝
 with tab2:
     if not data_ready:
-        st.warning("Run `python generate_data.py` first.")
+        st.warning("Dataset housing.csv is not loaded.")
         st.stop()
 
-    st.markdown('<div class="section-header">Dataset Overview</div>', unsafe_allow_html=True)
+    st.markdown("### 🗺️ California Housing Geospatial & Exploratory Data Analysis")
 
     k1, k2, k3, k4, k5 = st.columns(5)
     kpis = [
-        ("Total Records",  f"{len(df):,}",               "properties"),
-        ("Avg Area",       f"{df.Area.mean():,.0f} sqft", ""),
-        ("Avg Price",      format_price(df.Price.mean()), "market avg"),
-        ("Max Price",      format_price(df.Price.max()),  "premium listing"),
-        ("Cities",         "22",                          "Indian localities"),
+        ("Total Records", f"{len(df_data):,}", "census blocks"),
+        ("Median House Value", format_usd(df_data['median_house_value'].median()), "state median"),
+        ("Avg Household Income", f"${df_data['median_income'].mean()*10000:,.0f}", "annual average"),
+        ("Avg Building Age", f"{df_data['housing_median_age'].mean():.1f} yrs", "property vintage"),
+        ("Missing Bedrooms", f"{df_data['total_bedrooms'].isna().sum()}", "imputed by pipeline")
     ]
+
     for col, (lbl, val, sub) in zip([k1, k2, k3, k4, k5], kpis):
         col.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-label">{lbl}</div>
-            <div class="metric-value" style="font-size:1.2rem;">{val}</div>
-            <div class="metric-sub">{sub}</div>
-        </div>""", unsafe_allow_html=True)
+        <div class="kpi-card">
+            <div class="kpi-title">{lbl}</div>
+            <div class="kpi-value" style="font-size: 1.25rem;">{val}</div>
+            <div class="kpi-sub">{sub}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Row 1: Price histogram + median by city
-    r1a, r1b = st.columns(2, gap="medium")
+    # 1. Geographic Scatter Map
+    st.markdown("#### 🌊 Geographic Price Distribution Across California")
+    # Sample 4,000 points for smooth interactive plotting
+    sample_df = df_data.sample(min(4000, len(df_data)), random_state=42)
 
-    with r1a:
-        fig1 = px.histogram(df, x="Price", nbins=60,
-                            title="Price Distribution (Lakhs)",
-                            labels={"Price": "Price (Lakh)"},
-                            color_discrete_sequence=["#ff9900"])
-        fig1.update_traces(opacity=0.85)
-        apply_layout(fig1)
-        st.plotly_chart(fig1, width="stretch")
+    fig_geo = px.scatter(
+        sample_df,
+        x="longitude",
+        y="latitude",
+        color="median_house_value",
+        size="population",
+        size_max=12,
+        color_continuous_scale="Viridis",
+        title="California Housing Prices by Latitude & Longitude (Population = Bubble Size)",
+        labels={"median_house_value": "House Value ($)", "longitude": "Longitude", "latitude": "Latitude"},
+        opacity=0.65
+    )
+    apply_layout(fig_geo, height=450)
+    st.plotly_chart(fig_geo, width="stretch")
 
-    with r1b:
-        # Extract metro from city name for cleaner axis
-        df["Metro"] = df["City"].apply(lambda x: x.split(" - ")[0])
-        metro_med   = df.groupby("Metro")["Price"].median().reset_index().sort_values("Price")
-        fig2 = px.bar(metro_med, x="Price", y="Metro", orientation="h",
-                      title="Median Price by Metro City",
-                      labels={"Price": "Median Price (Lakh)", "Metro": ""},
-                      color="Price",
-                      color_continuous_scale=["#138808", "#ff9900", "#e94560"])
-        apply_layout(fig2, coloraxis_showscale=False)
-        st.plotly_chart(fig2, width="stretch")
+    # 2. Target Distribution & Ocean Proximity Boxplot
+    r1, r2 = st.columns(2, gap="medium")
 
-    # Row 2: Area vs Price + BHK box
-    r2a, r2b = st.columns(2, gap="medium")
+    with r1:
+        fig_hist = px.histogram(
+            df_data,
+            x="median_house_value",
+            nbins=50,
+            title="Distribution of Median House Values (Shows $500,001 Cap)",
+            color_discrete_sequence=["#3b82f6"]
+        )
+        fig_hist.add_vline(x=500001, line_dash="dash", line_color="#ef4444", annotation_text="Capped at $500k")
+        apply_layout(fig_hist)
+        st.plotly_chart(fig_hist, width="stretch")
 
-    with r2a:
-        fig3 = px.scatter(df, x="Area", y="Price", color="Metro",
-                          title="Area vs Price by Metro City",
-                          labels={"Area": "Area (sq ft)", "Price": "Price (Lakh)"},
-                          opacity=0.6,
-                          color_discrete_sequence=px.colors.qualitative.Vivid)
-        apply_layout(fig3)
-        st.plotly_chart(fig3, width="stretch")
+    with r2:
+        fig_box = px.box(
+            df_data,
+            x="ocean_proximity",
+            y="median_house_value",
+            color="ocean_proximity",
+            title="Median House Value by Ocean Proximity",
+            labels={"median_house_value": "House Value ($)", "ocean_proximity": "Ocean Proximity"}
+        )
+        apply_layout(fig_box, showlegend=False)
+        st.plotly_chart(fig_box, width="stretch")
 
-    with r2b:
-        fig4 = px.box(df, x="Bedrooms", y="Price",
-                      title="Price by BHK Configuration",
-                      labels={"Bedrooms": "Bedrooms (BHK)", "Price": "Price (Lakh)"},
-                      color="Bedrooms",
-                      color_discrete_sequence=["#ff9900","#138808","#0606b4","#e94560","#9b5de5"])
-        apply_layout(fig4, showlegend=False)
-        st.plotly_chart(fig4, width="stretch")
+    # 3. Correlation Heatmap & Income vs Value
+    r3, r4 = st.columns(2, gap="medium")
 
-    # Row 3: Furnishing + floor analysis
-    r3a, r3b = st.columns(2, gap="medium")
+    with r3:
+        corr_matrix = df_data.select_dtypes(include=[np.number]).corr()
+        fig_corr = px.imshow(
+            corr_matrix,
+            text_auto=".2f",
+            color_continuous_scale="RdBu_r",
+            zmin=-1,
+            zmax=1,
+            title="Feature Correlation Matrix"
+        )
+        apply_layout(fig_corr)
+        st.plotly_chart(fig_corr, width="stretch")
 
-    with r3a:
-        furn_med = df.groupby("Furnishing")["Price"].median().reset_index()
-        fig5 = px.bar(furn_med, x="Furnishing", y="Price",
-                      title="Median Price by Furnishing Status",
-                      labels={"Price": "Median Price (Lakh)"},
-                      color="Furnishing",
-                      color_discrete_sequence=["#64748b","#ff9900","#138808"])
-        apply_layout(fig5, showlegend=False)
-        st.plotly_chart(fig5, width="stretch")
+    with r4:
+        fig_income = px.scatter(
+            sample_df,
+            x="median_income",
+            y="median_house_value",
+            color="ocean_proximity",
+            opacity=0.6,
+            title="Median Income vs House Value (Strongest Predictor: r = 0.69)",
+            labels={"median_income": "Median Income ($10k)", "median_house_value": "House Value ($)"}
+        )
+        apply_layout(fig_income)
+        st.plotly_chart(fig_income, width="stretch")
 
-    with r3b:
-        floor_med = df.groupby("Floor")["Price"].median().reset_index()
-        fig6 = px.bar(floor_med, x="Floor", y="Price",
-                      title="Median Price by Floor Type",
-                      labels={"Price": "Median Price (Lakh)"},
-                      color="Price",
-                      color_continuous_scale=["#138808","#ff9900","#e94560"])
-        apply_layout(fig6, coloraxis_showscale=False)
-        st.plotly_chart(fig6, width="stretch")
-
-    # Row 4: Correlation + Age vs Price
-    r4a, r4b = st.columns(2, gap="medium")
-
-    with r4a:
-        num_cols = ["Area", "Bedrooms", "Bathrooms", "Parking", "Age", "Price"]
-        corr = df[num_cols].corr()
-        fig7 = px.imshow(corr, title="Feature Correlation Matrix",
-                         color_continuous_scale="RdBu_r",
-                         zmin=-1, zmax=1, text_auto=".2f")
-        apply_layout(fig7)
-        st.plotly_chart(fig7, width="stretch")
-
-    with r4b:
-        z = np.polyfit(df["Age"], df["Price"], 1)
-        p = np.poly1d(z)
-        x_line = np.linspace(df["Age"].min(), df["Age"].max(), 100)
-        fig8 = px.scatter(df, x="Age", y="Price", color="Metro",
-                          title="Property Age vs Price",
-                          labels={"Age": "Age (Years)", "Price": "Price (Lakh)"},
-                          opacity=0.5,
-                          color_discrete_sequence=px.colors.qualitative.Vivid)
-        fig8.add_trace(go.Scatter(x=x_line, y=p(x_line), mode="lines",
-                                  line=dict(color="#ff9900", width=2.5, dash="dash"),
-                                  name="Trend"))
-        apply_layout(fig8)
-        st.plotly_chart(fig8, width="stretch")
-
-    # Top 10 expensive localities
-    st.markdown('<div class="section-header">Most Expensive Localities</div>', unsafe_allow_html=True)
-    city_med = df.groupby("City")["Price"].median().reset_index().sort_values("Price", ascending=False).head(10)
-    fig9 = px.bar(city_med, x="Price", y="City", orientation="h",
-                  title="Top 10 Localities by Median Price",
-                  color="Price",
-                  color_continuous_scale=["#138808","#ff9900","#e94560"],
-                  labels={"Price": "Median Price (Lakh)", "City": ""})
-    apply_layout(fig9, height=350, coloraxis_showscale=False)
-    st.plotly_chart(fig9, width="stretch")
-
-    with st.expander("Raw Dataset (first 100 rows)"):
-        st.dataframe(df.head(100), width="stretch")
-
+    # Raw Data Explorer
+    with st.expander("🗃️ View Raw California Housing Dataset (First 100 Rows)"):
+        st.dataframe(df_data.head(100), width="stretch")
 
 # ╔══════════════════════════════════════════════════════════════════╗
-# ║  TAB 3 — MODEL PERFORMANCE                                      ║
+# ║  TAB 3 — MODEL BENCHMARKS & RESIDUALS                           ║
 # ╚══════════════════════════════════════════════════════════════════╝
 with tab3:
     if not model_ready:
-        st.warning("Run `python train.py` first.")
+        st.warning("Model benchmark statistics not ready.")
         st.stop()
 
-    results = payload["all_results"]
-    best    = payload["model_name"]
+    cv_results = payload["cv_results"]
+    test_results = payload["test_results"]
+    best_name = payload["model_name"]
 
-    st.markdown('<div class="section-header">Model Comparison</div>', unsafe_allow_html=True)
+    st.markdown("### 📊 Model Selection & Performance Benchmarking")
+    st.markdown(
+        "Following the methodology in Project 15.4: 5 algorithms evaluated via **5-fold Cross-Validation** "
+        "on the training set, followed by **GridSearchCV hyperparameter tuning** on the best performing model."
+    )
 
-    m_cols = st.columns(len(results))
-    for col, (mname, mvals) in zip(m_cols, results.items()):
-        is_best  = mname == best
-        border   = "border:1px solid #ff9900;" if is_best else ""
-        title_c  = "#ff9900" if is_best else "#64748b"
+    # Benchmark Cards
+    b_cols = st.columns(len(cv_results))
+    for col, (m_name, res) in zip(b_cols, test_results.items()):
+        is_best = (m_name == best_name)
+        border_style = "border: 1px solid #3b82f6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.25);" if is_best else "border: 1px solid rgba(255, 255, 255, 0.08);"
+        title_color = "#60a5fa" if is_best else "#94a3b8"
+
         col.markdown(f"""
-        <div class="card" style="{border}">
-            <div style="font-size:.73rem;font-weight:700;letter-spacing:.08em;
-                        text-transform:uppercase;color:{title_c};">
-                {'BEST · ' if is_best else ''}{mname}
+        <div class="glass-card" style="{border_style}; min-height: 210px;">
+            <div style="font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: {title_color};">
+                {'🏆 ' if is_best else ''}{m_name}
             </div>
-            <div style="margin-top:.7rem;">
-                <div style="font-family:Outfit;font-size:1.6rem;font-weight:700;color:#f1f5f9;">
-                    {mvals['R2']:.4f}
-                </div>
-                <div style="font-size:.76rem;color:#64748b;">R2 Score</div>
+            <div style="font-family: Space Grotesk; font-size: 1.6rem; font-weight: 700; color: #f8fafc; margin: 0.5rem 0;">
+                {res['R2']:.4f}
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-top:.7rem;">
-                <div>
-                    <div style="font-size:.95rem;font-weight:600;color:#f1f5f9;">Rs.{mvals['MAE']:.1f}L</div>
-                    <div style="font-size:.7rem;color:#64748b;">MAE</div>
-                </div>
-                <div>
-                    <div style="font-size:.95rem;font-weight:600;color:#f1f5f9;">Rs.{mvals['RMSE']:.1f}L</div>
-                    <div style="font-size:.7rem;color:#64748b;">RMSE</div>
-                </div>
+            <div style="font-size: 0.75rem; color: #64748b; margin-top: -0.4rem;">Test R² Score</div>
+            <hr style="margin: 0.6rem 0;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.8rem;">
+                <span style="color: #94a3b8;">Test RMSE:</span>
+                <span style="color: #f8fafc; font-weight: 600;">${res['RMSE']:,.0f}</span>
             </div>
-            <div style="margin-top:.6rem;">
-                <div style="font-size:.95rem;font-weight:600;color:#f1f5f9;">{mvals['CV_R2']:.4f}</div>
-                <div style="font-size:.7rem;color:#64748b;">5-Fold CV R2</div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-top: 0.2rem;">
+                <span style="color: #94a3b8;">Test MAE:</span>
+                <span style="color: #f8fafc; font-weight: 600;">${res['MAE']:,.0f}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-top: 0.2rem;">
+                <span style="color: #94a3b8;">CV RMSE:</span>
+                <span style="color: #a78bfa; font-weight: 600;">${cv_results[m_name]['RMSE']:,.0f}</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Bar charts
-    bc1, bc2 = st.columns(2, gap="medium")
-    with bc1:
-        r2_vals = {k: v["R2"] for k, v in results.items()}
-        fig_r2  = go.Figure(go.Bar(
-            x=list(r2_vals.keys()), y=list(r2_vals.values()),
-            marker_color=["#ff9900" if k == best else "#64748b" for k in r2_vals],
-            text=[f"{v:.4f}" for v in r2_vals.values()],
-            textposition="outside", textfont=dict(color="#f1f5f9"),
-        ))
-        apply_layout(fig_r2, title="R2 Score Comparison", yaxis=dict(range=[0, 1.05]))
+    # Comparison Bar Charts
+    c1, c2 = st.columns(2, gap="medium")
+
+    with c1:
+        # RMSE Comparison (Lower is Better)
+        rmse_df = pd.DataFrame([
+            {"Model": name, "Test RMSE": res["RMSE"], "Best": (name == best_name)}
+            for name, res in test_results.items()
+        ]).sort_values("Test RMSE", ascending=False)
+
+        fig_rmse = px.bar(
+            rmse_df,
+            x="Test RMSE",
+            y="Model",
+            orientation="h",
+            color="Test RMSE",
+            color_continuous_scale="Viridis_r",
+            title="Root Mean Squared Error (RMSE) — Lower is Better",
+            labels={"Test RMSE": "Test RMSE ($)", "Model": ""}
+        )
+        apply_layout(fig_rmse, coloraxis_showscale=False)
+        st.plotly_chart(fig_rmse, width="stretch")
+
+    with c2:
+        # R2 Comparison (Higher is Better)
+        r2_df = pd.DataFrame([
+            {"Model": name, "Test R²": res["R2"], "Best": (name == best_name)}
+            for name, res in test_results.items()
+        ]).sort_values("Test R²", ascending=True)
+
+        fig_r2 = px.bar(
+            r2_df,
+            x="Test R²",
+            y="Model",
+            orientation="h",
+            color="Test R²",
+            color_continuous_scale="Purples",
+            title="Coefficient of Determination (R²) — Higher is Better",
+            labels={"Test R²": "Test R² Score", "Model": ""}
+        )
+        apply_layout(fig_r2, coloraxis_showscale=False)
         st.plotly_chart(fig_r2, width="stretch")
 
-    with bc2:
-        mae_vals = {k: v["MAE"] for k, v in results.items()}
-        fig_mae  = go.Figure(go.Bar(
-            x=list(mae_vals.keys()), y=list(mae_vals.values()),
-            marker_color=["#ff9900" if k == best else "#64748b" for k in mae_vals],
-            text=[f"Rs.{v:.1f}L" for v in mae_vals.values()],
-            textposition="outside", textfont=dict(color="#f1f5f9"),
+    # Residuals & Actual vs Predicted Analysis
+    st.markdown("#### 🔬 Residual Error Analysis & Actual vs Predicted")
+    d1, d2 = st.columns(2, gap="medium")
+
+    sample_y = payload["sample_test_y"]
+    sample_pred = payload["sample_test_pred"]
+    residuals = payload["residuals"]
+
+    with d1:
+        fig_avp = go.Figure()
+        fig_avp.add_trace(go.Scatter(
+            x=sample_y,
+            y=sample_pred,
+            mode="markers",
+            marker=dict(color="#3b82f6", opacity=0.5, size=5),
+            name="Predictions"
         ))
-        apply_layout(fig_mae, title="MAE — lower is better")
-        st.plotly_chart(fig_mae, width="stretch")
+        min_v = float(min(sample_y.min(), sample_pred.min()))
+        max_v = float(max(sample_y.max(), sample_pred.max()))
+        fig_avp.add_trace(go.Scatter(
+            x=[min_v, max_v],
+            y=[min_v, max_v],
+            mode="lines",
+            line=dict(color="#f43f5e", dash="dash", width=2),
+            name="Perfect Fit (y = x)"
+        ))
+        apply_layout(
+            fig_avp,
+            title="Actual vs Predicted Values (Test Set)",
+            xaxis_title="Actual House Value ($)",
+            yaxis_title="Predicted Value ($)"
+        )
+        st.plotly_chart(fig_avp, width="stretch")
 
-    # Actual vs Predicted
-    if data_ready:
-        st.markdown('<div class="section-header">Actual vs Predicted</div>', unsafe_allow_html=True)
-        X  = df[payload["features"]]
-        y  = df["Price"]
-        _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        y_pred    = payload["model"].predict(X_test)
-        residuals = y_test.values - y_pred
+    with d2:
+        fig_res = px.histogram(
+            x=residuals,
+            nbins=50,
+            title="Residual Error Distribution (Actual - Predicted)",
+            labels={"x": "Prediction Error ($)"},
+            color_discrete_sequence=["#8b5cf6"]
+        )
+        fig_res.add_vline(x=0, line_dash="dash", line_color="#f43f5e", line_width=2)
+        apply_layout(fig_res)
+        st.plotly_chart(fig_res, width="stretch")
 
-        av1, av2 = st.columns(2, gap="medium")
-        with av1:
-            mn_v, mx_v = float(y_test.min()), float(y_test.max())
-            fig_avp = go.Figure()
-            fig_avp.add_trace(go.Scatter(
-                x=y_test, y=y_pred, mode="markers",
-                marker=dict(color="#ff9900", opacity=0.6, size=5), name="Predicted"))
-            fig_avp.add_trace(go.Scatter(
-                x=[mn_v, mx_v], y=[mn_v, mx_v], mode="lines",
-                line=dict(color="#138808", dash="dash", width=2), name="Perfect Fit"))
-            apply_layout(fig_avp, title="Actual vs Predicted Prices",
-                         xaxis_title="Actual (Lakh)", yaxis_title="Predicted (Lakh)")
-            st.plotly_chart(fig_avp, width="stretch")
-
-        with av2:
-            fig_res = px.histogram(x=residuals, nbins=50,
-                                   title="Residuals Distribution",
-                                   labels={"x": "Error (Lakh)"},
-                                   color_discrete_sequence=["#138808"])
-            fig_res.add_vline(x=0, line_dash="dash", line_color="#ff9900", line_width=2)
-            apply_layout(fig_res)
-            st.plotly_chart(fig_res, width="stretch")
-
-    # Feature importances
-    try:
-        reg     = payload["model"].named_steps["regressor"]
-        fi      = reg.feature_importances_
-        pre     = payload["model"].named_steps["preprocessor"]
-        cat_enc = pre.named_transformers_["cat"]
-        cat_names = cat_enc.get_feature_names_out(["Furnishing", "Floor", "City"])
-        num_names = ["Area", "Bedrooms", "Bathrooms", "Parking", "Age"]
-        feat_names = num_names + list(cat_names)
-
-        fi_df = (pd.DataFrame({"Feature": feat_names, "Importance": fi})
-                   .sort_values("Importance", ascending=True)
-                   .tail(15))
-
-        st.markdown('<div class="section-header">Feature Importances (Top 15)</div>', unsafe_allow_html=True)
-        fig_fi = px.bar(fi_df, x="Importance", y="Feature", orientation="h",
-                        color="Importance",
-                        color_continuous_scale=["#138808", "#ff9900", "#e94560"],
-                        title=f"Feature Importances — {best}")
-        apply_layout(fig_fi, coloraxis_showscale=False, height=450)
-        st.plotly_chart(fig_fi, width="stretch")
-    except AttributeError:
-        pass
-
+    # Hyperparameter Tuning Details
+    with st.expander("⚙️ View GridSearchCV Optimal Hyperparameters for HistGradientBoosting"):
+        st.json(payload["best_params"])
 
 # ╔══════════════════════════════════════════════════════════════════╗
-# ║  TAB 4 — COMPARE PROPERTIES                                     ║
+# ║  TAB 4 — PROPERTY COMPARISON                                    ║
 # ╚══════════════════════════════════════════════════════════════════╝
 with tab4:
     if not model_ready:
-        st.warning("Run `python train.py` first.")
+        st.warning("Model not ready.")
         st.stop()
 
-    st.markdown('<div class="section-header">Compare Two Indian Properties Side by Side</div>',
-                unsafe_allow_html=True)
+    st.markdown("### 🔍 Compare Two California Locations Side by Side")
 
-    def prop_form(suffix, color, defaults):
-        area_    = st.slider(f"Area (sqft)", 350, 5500, defaults["area"], step=50, key=f"area_{suffix}")
-        age_     = st.slider(f"Age (yrs)",   0,   35,   defaults["age"],           key=f"age_{suffix}")
-        r1, r2, r3 = st.columns(3)
-        bed_  = r1.selectbox("Bed",   [1,2,3,4,5],          index=defaults["bed"]-1,  key=f"bed_{suffix}")
-        bath_ = r2.selectbox("Bath",  [1,2,3,4,5],          index=defaults["bath"]-1, key=f"bath_{suffix}")
-        park_ = r3.selectbox("Park",  [0,1,2,3],            index=defaults["park"],   key=f"park_{suffix}")
-        furn_ = st.selectbox("Furnishing", FURNISHING_OPTIONS, index=defaults["furn"], key=f"furn_{suffix}")
-        flr_  = st.selectbox("Floor", FLOOR_OPTIONS,           index=defaults["flr"],  key=f"flr_{suffix}")
-        city_ = st.selectbox("City / Locality", CITIES,
-                             format_func=lambda c: f"{CITY_EMOJIS[c]} {c}",
-                             index=defaults["city"], key=f"city_{suffix}")
-        return area_, bed_, bath_, park_, age_, furn_, flr_, city_
+    def render_prop_inputs(suffix: str, default_preset_idx: int):
+        preset_choice = st.selectbox(
+            f"Preset for Property {suffix}:",
+            list(CALIFORNIA_PRESETS.keys()),
+            index=default_preset_idx,
+            key=f"preset_{suffix}"
+        )
+        p_data = CALIFORNIA_PRESETS[preset_choice]
 
-    pa_col, _, pb_col = st.columns([1, 0.05, 1])
+        c1, c2 = st.columns(2)
+        with c1:
+            lon = st.number_input("Longitude", -124.5, -114.0, float(p_data["longitude"] if p_data else -122.2), step=0.01, key=f"lon_{suffix}")
+            inc = st.slider("Median Income ($10k)", 0.5, 15.0, float(p_data["median_income"] if p_data else 6.0), step=0.1, key=f"inc_{suffix}")
+            rooms = st.number_input("Total Rooms", 50, 20000, int(p_data["total_rooms"] if p_data else 2500), step=50, key=f"rooms_{suffix}")
+            pop = st.number_input("Population", 10, 15000, int(p_data["population"] if p_data else 1200), step=25, key=f"pop_{suffix}")
+        with c2:
+            lat = st.number_input("Latitude", 32.0, 42.0, float(p_data["latitude"] if p_data else 37.8), step=0.01, key=f"lat_{suffix}")
+            age = st.slider("Building Age", 1.0, 52.0, float(p_data["housing_median_age"] if p_data else 30.0), step=1.0, key=f"age_{suffix}")
+            beds = st.number_input("Total Bedrooms", 10, 5000, int(p_data["total_bedrooms"] if p_data else 500), step=10, key=f"beds_{suffix}")
+            hh = st.number_input("Households", 5, 4000, int(p_data["households"] if p_data else 450), step=10, key=f"hh_{suffix}")
 
-    with pa_col:
-        st.markdown(f'<div style="font-family:Outfit;font-size:1.1rem;font-weight:700;color:#ff9900;margin-bottom:.6rem;">Property A</div>', unsafe_allow_html=True)
-        pa = prop_form("a", "#ff9900", {"area":1200,"age":3,"bed":2,"bath":2,"park":1,"furn":1,"flr":1,"city":7})
+        ocean = st.selectbox(
+            "Ocean Proximity",
+            OCEAN_PROXIMITY_OPTIONS,
+            index=OCEAN_PROXIMITY_OPTIONS.index(p_data["ocean_proximity"] if p_data else "<1H OCEAN"),
+            key=f"ocean_{suffix}"
+        )
+        return lon, lat, age, rooms, beds, pop, hh, inc, ocean
 
-    with pb_col:
-        st.markdown(f'<div style="font-family:Outfit;font-size:1.1rem;font-weight:700;color:#138808;margin-bottom:.6rem;">Property B</div>', unsafe_allow_html=True)
-        pb = prop_form("b", "#138808", {"area":1800,"age":8,"bed":3,"bath":2,"park":1,"furn":0,"flr":2,"city":12})
+    cp1, cp2 = st.columns(2, gap="large")
+    with cp1:
+        st.markdown("#### 🅰️ Property A")
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        prop_a = render_prop_inputs("A", 1) # SF preset
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with cp2:
+        st.markdown("#### 🅱️ Property B")
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        prop_b = render_prop_inputs("B", 5) # Sacramento preset
+        st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
-    compare_btn = st.button("Compare Properties", use_container_width=True)
+    comp_btn = st.button("⚖️ Run Comparative Valuation", width="stretch")
 
-    if compare_btn:
-        pred_a = payload["model"].predict(build_input_df(*pa))[0]
-        pred_b = payload["model"].predict(build_input_df(*pb))[0]
-        diff   = abs(pred_a - pred_b)
-        cheaper = "A" if pred_a < pred_b else "B"
+    if comp_btn or "last_comp" in st.session_state:
+        df_a = build_input_df(*prop_a)
+        df_b = build_input_df(*prop_b)
 
-        ca, mid, cb = st.columns([1, 0.25, 1])
-        with ca:
+        val_a = float(payload["model"].predict(df_a)[0])
+        val_b = float(payload["model"].predict(df_b)[0])
+        diff = abs(val_a - val_b)
+
+        st.session_state["last_comp"] = True
+
+        r_a, r_mid, r_b = st.columns([1, 0.4, 1])
+        with r_a:
             st.markdown(f"""
-            <div style="background:linear-gradient(135deg,rgba(255,153,0,.2),rgba(255,153,0,.05));
-                        border:1px solid rgba(255,153,0,.4);border-radius:16px;padding:1.5rem;text-align:center;">
-                <div style="font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#ff9900;">Property A</div>
-                <div style="font-family:Outfit;font-size:2rem;font-weight:800;color:#f1f5f9;margin:.5rem 0;">{format_price(pred_a)}</div>
-                <div style="font-size:.78rem;color:#64748b;">{pa[0]:,} sqft · {pa[1]}BHK · {pa[7].split(' - ')[0]}</div>
-            </div>""", unsafe_allow_html=True)
+            <div class="glass-card" style="text-align: center; border-color: #3b82f6;">
+                <div style="color: #60a5fa; font-weight: 700; font-size: 0.85rem;">PROPERTY A VALUATION</div>
+                <div style="font-family: Space Grotesk; font-size: 2.2rem; font-weight: 800; color: #fff; margin: 0.4rem 0;">
+                    {format_usd(val_a)}
+                </div>
+                <div style="color: #94a3b8; font-size: 0.8rem;">{prop_a[8]} · Inc: ${prop_a[7]*10000:,.0f}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-        with mid:
-            st.markdown('<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:1.8rem;color:#475569;font-weight:700;">VS</div>', unsafe_allow_html=True)
-
-        with cb:
+        with r_mid:
             st.markdown(f"""
-            <div style="background:linear-gradient(135deg,rgba(19,136,8,.2),rgba(19,136,8,.05));
-                        border:1px solid rgba(19,136,8,.4);border-radius:16px;padding:1.5rem;text-align:center;">
-                <div style="font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#138808;">Property B</div>
-                <div style="font-family:Outfit;font-size:2rem;font-weight:800;color:#f1f5f9;margin:.5rem 0;">{format_price(pred_b)}</div>
-                <div style="font-size:.78rem;color:#64748b;">{pb[0]:,} sqft · {pb[1]}BHK · {pb[7].split(' - ')[0]}</div>
-            </div>""", unsafe_allow_html=True)
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center;">
+                <div style="font-size: 1.5rem; font-weight: 800; color: #a78bfa;">VS</div>
+                <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.4rem;">Delta: <b>{format_usd(diff)}</b></div>
+            </div>
+            """, unsafe_allow_html=True)
 
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.info(f"Property **{cheaper}** is cheaper by **{format_price(diff)}** ({diff/max(pred_a,pred_b)*100:.1f}% difference)")
+        with r_b:
+            st.markdown(f"""
+            <div class="glass-card" style="text-align: center; border-color: #a78bfa;">
+                <div style="color: #c084fc; font-weight: 700; font-size: 0.85rem;">PROPERTY B VALUATION</div>
+                <div style="font-family: Space Grotesk; font-size: 2.2rem; font-weight: 800; color: #fff; margin: 0.4rem 0;">
+                    {format_usd(val_b)}
+                </div>
+                <div style="color: #94a3b8; font-size: 0.8rem;">{prop_b[8]} · Inc: ${prop_b[7]*10000:,.0f}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-        # Radar comparison — FIXED: use proper rgba hex
-        FILL_A = "rgba(255,153,0,0.18)"
-        FILL_B = "rgba(19,136,8,0.18)"
-
-        def norm_vals(area, bed, bath, park, age, furn, flr, city):
-            mults     = list(CITY_PRICE_MULT.values())
-            norm_loc  = (CITY_PRICE_MULT[city] - min(mults)) / (max(mults) - min(mults))
-            furn_s    = {"Unfurnished":0.3,"Semi-Furnished":0.6,"Fully Furnished":1.0}
-            floor_s   = {"Ground":0.4,"Low (1-4)":0.6,"Mid (5-10)":0.8,"High (11+)":1.0}
-            return [min(area/5500,1), bed/5, bath/5, 1-age/35, norm_loc, furn_s[furn], floor_s[flr]]
-
-        cats = ["Area","BHK","Bathrooms","Age Factor","Location","Furnishing","Floor"]
-        va, vb = norm_vals(*pa), norm_vals(*pb)
+        # Comparative Feature Bar Chart
+        comp_metrics = ["Estimated Price ($10k)", "Median Income ($10k)", "Rooms / 100", "Age (Yrs)"]
+        vals_a = [val_a / 10000, prop_a[7], prop_a[3] / 100, prop_a[2]]
+        vals_b = [val_b / 10000, prop_b[7], prop_b[3] / 100, prop_b[2]]
 
         fig_comp = go.Figure()
-        for vals, name, line_c, fill_c in [
-            (va, "Property A", "#ff9900", FILL_A),
-            (vb, "Property B", "#138808", FILL_B),
-        ]:
-            fig_comp.add_trace(go.Scatterpolar(
-                r=vals + [vals[0]], theta=cats + [cats[0]],
-                name=name, fill="toself",
-                fillcolor=fill_c,
-                line=dict(color=line_c, width=2),
-            ))
-        fig_comp.update_layout(
-            **PLOT_BASE,
-            margin=dict(l=40, r=40, t=50, b=20),
-            title="Feature Comparison Radar",
-            polar=dict(
-                bgcolor="rgba(255,255,255,0.03)",
-                radialaxis=dict(visible=True, range=[0,1],
-                                gridcolor="rgba(255,255,255,0.08)"),
-                angularaxis=dict(gridcolor="rgba(255,255,255,0.08)",
-                                 tickfont=dict(size=10, color="#94a3b8")),
-            ),
-            height=380,
-        )
+        fig_comp.add_trace(go.Bar(name="Property A", x=comp_metrics, y=vals_a, marker_color="#3b82f6"))
+        fig_comp.add_trace(go.Bar(name="Property B", x=comp_metrics, y=vals_b, marker_color="#a78bfa"))
+        apply_layout(fig_comp, title="Side-by-Side Feature & Valuation Comparison", barmode="group")
         st.plotly_chart(fig_comp, width="stretch")
-
-        # Side-by-side bar
-        feat_labels = ["Area (sqft/100)","Bedrooms","Bathrooms","Parking","Price (Lakh)"]
-        a_vals = [pa[0]/100, pa[1], pa[2], pa[3], pred_a]
-        b_vals = [pb[0]/100, pb[1], pb[2], pb[3], pred_b]
-
-        fig_bar = go.Figure()
-        fig_bar.add_trace(go.Bar(name="Property A", x=feat_labels, y=a_vals, marker_color="#ff9900"))
-        fig_bar.add_trace(go.Bar(name="Property B", x=feat_labels, y=b_vals, marker_color="#138808"))
-        apply_layout(fig_bar, title="Side-by-Side Feature Comparison", barmode="group")
-        st.plotly_chart(fig_bar, width="stretch")
